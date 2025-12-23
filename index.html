@@ -4,16 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OT Supervisor Management Console</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@0.441.0/dist/umd/lucide.js"></script>
     <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .view { min-height: 70vh; }
+        
         @media print {
             body * { visibility: hidden; }
-            #report-content, #report-content * { visibility: visible; }
-            #report-content { 
+            #report-content, #report-content * { 
+                visibility: visible !important; 
                 position: absolute; 
                 left: 0; 
                 top: 0; 
@@ -21,896 +21,345 @@
             }
             .break-before-page { page-break-before: always; margin-top: 1cm; }
         }
-        .recharts-text { font-family: inherit !important; }
+        
+        .chart-placeholder {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px dashed #cbd5e1;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
     </style>
 </head>
-<body class="bg-gradient-to-br from-slate-50 to-indigo-50 min-h-screen">
-    <div id="root"></div>
+<body class="bg-gradient-to-br from-indigo-50 to-slate-50 min-h-screen p-4 md:p-8">
+    
+    <!-- Header -->
+    <header class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                    OT Supervisor Dashboard
+                </h1>
+                <p class="text-slate-500 font-medium">職能治療督導管理系統</p>
+            </div>
+            <nav class="flex bg-slate-100 p-2 rounded-xl space-x-2 w-full lg:w-auto">
+                <button onclick="showView('dashboard')" 
+                        class="px-6 py-3 rounded-xl font-bold text-indigo-600 bg-white shadow-lg">
+                    儀表板
+                </button>
+                <button onclick="showView('individual')" 
+                        class="px-6 py-3 rounded-xl font-bold text-slate-600 hover:text-indigo-600 bg-slate-50">
+                    個案報告
+                </button>
+                <button onclick="showView('entry')" 
+                        class="px-6 py-3 rounded-xl font-bold text-slate-600 hover:text-indigo-600 bg-slate-50">
+                    資料輸入
+                </button>
+            </nav>
+        </div>
+    </header>
 
-    <script type="text/babel">
-        const { useState, useMemo, useEffect, useCallback } = React;
-
-        // Lucide icons
-        const { 
-            Activity, User, Calendar, Users, Database, Download, 
-            PlusCircle, Info, Heart, Coffee, PieChart 
-        } = lucide;
-
-        const calculateAge = (birthday) => {
-            if (!birthday) return 0;
-            const birthDate = new Date(birthday);
-            const today = new Date();
-            let age = today.getFullYear() - birthDate.getFullYear();
-            const m = today.getMonth() - birthDate.getMonth();
-            if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-                age--;
-            }
-            return age;
-        };
-
-        const getSitupsLevel = (count, gender, age) => {
-            const countNum = parseInt(count) || 0;
-            if (gender === '男') {
-                if (countNum >= 45) return { text: '優秀', color: 'text-blue-600' };
-                if (countNum >= 35) return { text: '良好', color: 'text-blue-600' };
-                if (countNum >= 25) return { text: '中等', color: 'text-blue-600' };
-                if (countNum >= 15) return { text: '稍差', color: 'text-red-600' };
-                return { text: '差', color: 'text-red-600' };
-            } else {
-                if (countNum >= 35) return { text: '優秀', color: 'text-blue-600' };
-                if (countNum >= 25) return { text: '良好', color: 'text-blue-600' };
-                if (countNum >= 15) return { text: '中等', color: 'text-blue-600' };
-                if (countNum >= 10) return { text: '稍差', color: 'text-red-600' };
-                return { text: '差', color: 'text-red-600' };
-            }
-        };
-
-        const getDetailedEvaluation = (m, gender, age) => {
-            if (!m || !m.data || m.data.length === 0) return null;
-            const d = m.data[m.data.length - 1];
-            
-            const height = parseFloat(d.height) || 170;
-            const weight = parseFloat(d.weight) || 70;
-            const hm = height / 100;
-            const bmi = (weight / (hm * hm)).toFixed(1);
-            
-            const sMMweight = (weight * (parseFloat(d.sMM) || 30) / 100).toFixed(1);
-            const smi = (sMMweight / hm).toFixed(2);
-            const whr = d.waist && d.hip ? (parseFloat(d.waist) / parseFloat(d.hip)).toFixed(2) : '0.00';
-
-            // BMI
-            const bmiMax = (24 * hm * hm).toFixed(1);
-            const bmiMin = (18.5 * hm * hm).toFixed(1);
-            let bmiEval = { text: '正常', color: 'text-blue-600' };
-            if (parseFloat(bmi) < 18.5) bmiEval = { text: '偏低', color: 'text-red-600' };
-            else if (parseFloat(bmi) > 24) bmiEval = { text: '偏高', color: 'text-red-600' };
-
-            const fatLimit = gender === '男' ? 20 : 30;
-            const fatEval = (parseFloat(d.bodyFat) || 0) > fatLimit ? 
-                { text: '偏高', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const smmMin = gender === '男' ? 32.9 : 25.9;
-            const smmEval = (parseFloat(d.sMM) || 0) < smmMin ? 
-                { text: '偏低', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const smiLimit = gender === '男' ? 7.0 : 5.7;
-            const smiEval = parseFloat(smi) < smiLimit ? 
-                { text: '偏低', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const vfEval = (parseFloat(d.visceralFat) || 0) > 10 ? 
-                { text: '偏高', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const whrStd = gender === '男' ? 0.92 : 0.88;
-            const whrEval = parseFloat(whr) > whrStd ? 
-                { text: '偏高', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const sitStandStd = gender === '男' ? (age <= 60 ? 18 : 24) : (age <= 60 ? 15 : 22);
-            const sitStandEval = (parseFloat(d.sitStand) || 0) < sitStandStd ? 
-                { text: '偏低', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const walkPredict = gender === '男' ? 
-                (2.11 * height - 2.29 * weight - 5.78 * age + 667) : 
-                (7.57 * height - 1.76 * weight - 5.02 * age - 309);
-            const walkMin = Math.round(gender === '男' ? walkPredict - 139 : walkPredict - 153);
-            const walkEval = (parseFloat(d.walk6m) || 0) < walkMin ? 
-                { text: '偏低', color: 'text-red-600' } : { text: '正常', color: 'text-blue-600' };
-
-            const situpsEval = getSitupsLevel(d.situps, gender, age);
-            
-            const reachStd = gender === '男' ? 10 : 15;
-            let reachEval = { text: '正常', color: 'text-blue-600' };
-            const reachVal = parseFloat(d.sitReach) || 0;
-            if (reachVal >= reachStd + 10) reachEval = { text: '優秀', color: 'text-blue-600' };
-            else if (reachVal >= reachStd + 5) reachEval = { text: '良好', color: 'text-blue-600' };
-            else if (reachVal >= reachStd - 5) reachEval = { text: '稍差', color: 'text-red-600' };
-            else reachEval = { text: '差', color: 'text-red-600' };
-
-            const ageDiff = (parseFloat(d.bodyAge) || 0) - age;
-            const ageDiffStr = ageDiff > 0 ? `+${ageDiff}` : ageDiff.toString();
-            const ageColor = ageDiff > 0 ? 'text-red-600' : 'text-blue-600';
-            const ageEval = ageDiff > 0 ? { text: '老化', color: 'text-red-600' } : { text: '年輕', color: 'text-blue-600' };
-
-            return {
-                bmi, bmiMin, bmiMax, bmiEval, fatLimit, fatEval, smmMin, smmEval,
-                smi, smiLimit, smiEval, vfEval, whr, whrStd, whrEval,
-                sitStandStd, sitStandEval, walkMin, walkEval, situpsEval,
-                reachStd, reachEval, sMMweight, ageDiffStr, ageColor, ageEval
-            };
-        };
-
-        const App = () => {
-            const [view, setView] = useState('dashboard');
-            const [selectedUserId, setSelectedUserId] = useState('');
-            const [selectedDates, setSelectedDates] = useState([]);
-            const [bodyMetric, setBodyMetric] = useState('weight');
-            const [performanceMetric, setPerformanceMetric] = useState('walk6m');
-            const [members, setMembers] = useState([
-                {
-                    id: '001',
-                    bed: 'A01',
-                    name: '王大明',
-                    gender: '男',
-                    birthday: '1985-05-20',
-                    data: [
-                        {
-                            date: '2023-01-15',
-                            weight: 82,
-                            height: 175,
-                            bodyFat: 28,
-                            sMM: 29,
-                            visceralFat: 13,
-                            sitStand: 10,
-                            walk6m: 320,
-                            sitReach: 2,
-                            situps: 5,
-                            waist: 98,
-                            hip: 90,
-                            bmr: 1650,
-                            bodyAge: 45
-                        },
-                        {
-                            date: '2024-06-10',
-                            weight: 75,
-                            height: 175,
-                            bodyFat: 21,
-                            sMM: 33,
-                            visceralFat: 9,
-                            sitStand: 18,
-                            walk6m: 450,
-                            sitReach: 12,
-                            situps: 18,
-                            waist: 88,
-                            hip: 90,
-                            bmr: 1720,
-                            bodyAge: 38
-                        }
-                    ]
-                },
-                {
-                    id: '002',
-                    bed: 'B03',
-                    name: '李小美',
-                    gender: '女',
-                    birthday: '1990-11-10',
-                    data: [
-                        {
-                            date: '2024-06-12',
-                            weight: 63,
-                            height: 160,
-                            bodyFat: 30,
-                            sMM: 25,
-                            visceralFat: 7,
-                            sitStand: 13,
-                            walk6m: 340,
-                            sitReach: 18,
-                            situps: 12,
-                            waist: 82,
-                            hip: 95,
-                            bmr: 1350,
-                            bodyAge: 35
-                        }
-                    ]
-                }
-            ]);
-            const [newEntry, setNewEntry] = useState({
-                date: new Date().toISOString().split('T')[0],
-                bed: '',
-                name: '',
-                birthday: '',
-                gender: '',
-                height: '',
-                weight: '',
-                bodyFat: '',
-                sMM: '',
-                bmr: '',
-                bodyAge: '',
-                visceralFat: '',
-                waist: '',
-                hip: '',
-                situps: '',
-                walk6m: '',
-                sitStand: '',
-                sitReach: ''
-            });
-
-            const allDates = useMemo(() => {
-                const dates = new Set();
-                members.forEach(m => {
-                    m.data.forEach(d => dates.add(d.date));
-                });
-                return Array.from(dates).sort((a, b) => a.localeCompare(b));
-            }, [members]);
-
-            const sortedMembers = useMemo(() => {
-                return [...members].sort((a, b) => a.id.localeCompare(b.id));
-            }, [members]);
-
-            const selectedUser = useMemo(() => {
-                return members.find(m => m.id === selectedUserId) || members[0];
-            }, [members, selectedUserId]);
-
-            const evalResults = useMemo(() => {
-                if (!selectedUser) return null;
-                return getDetailedEvaluation(selectedUser, selectedUser.gender, calculateAge(selectedUser.birthday));
-            }, [selectedUser]);
-
-            const filteredStats = useMemo(() => {
-                let targetEntries = [];
-                let memberIdsInFilter = new Set();
-                let ages = [];
-                let maleCount = 0;
-                let femaleCount = 0;
-
-                members.forEach(m => {
-                    const age = calculateAge(m.birthday);
-                    let mHasDataInDate = false;
-                    m.data.forEach(d => {
-                        if (selectedDates.length === 0 || selectedDates.includes(d.date)) {
-                            const res = getDetailedEvaluation({ data: [d] }, m.gender, age);
-                            targetEntries.push({ ...d, res, gender: m.gender });
-                            mHasDataInDate = true;
-                        }
-                    });
-                    if (mHasDataInDate) {
-                        memberIdsInFilter.add(m.id);
-                        ages.push(age);
-                        if (m.gender === '男') maleCount++;
-                        else femaleCount++;
-                    }
-                });
-
-                const total = targetEntries.length;
-                const bmiAlert = targetEntries.filter(d => parseFloat(d.res?.bmi || 0) > 27).length;
-                const vfAlert = targetEntries.filter(d => parseFloat(d.visceralFat || 0) > 10).length;
-                const smmAlert = targetEntries.filter(d => parseFloat(d.sMM || 0) < 30).length;
-                const smiAlert = targetEntries.filter(d => {
-                    if (!d.res || !d.res.smi || !d.res.smiLimit) return false;
-                    return parseFloat(d.res.smi) < parseFloat(d.res.smiLimit);
-                }).length;
-                const avgAge = ages.length === 0 ? 0 : (ages.reduce((a, b) => a + b, 0) / ages.length).toFixed(1);
-
-                return {
-                    total, bmiAlert, vfAlert, smmAlert, smiAlert,
-                    maleCount, femaleCount, avgAge, memberTotal: memberIdsInFilter.size
-                };
-            }, [members, selectedDates]);
-
-            const handleAddEntry = useCallback(() => {
-                const entryData = {
-                    date: newEntry.date,
-                    weight: newEntry.weight,
-                    height: newEntry.height,
-                    bodyFat: newEntry.bodyFat,
-                    sMM: newEntry.sMM,
-                    visceralFat: newEntry.visceralFat,
-                    sitStand: newEntry.sitStand,
-                    walk6m: newEntry.walk6m,
-                    sitReach: newEntry.sitReach,
-                    situps: newEntry.situps,
-                    waist: newEntry.waist,
-                    hip: newEntry.hip,
-                    bmr: newEntry.bmr,
-                    bodyAge: newEntry.bodyAge
-                };
-
-                const existing = members.find(m => m.bed === newEntry.bed && m.name === newEntry.name);
-                if (existing) {
-                    const updated = members.map(m =>
-                        m.id === existing.id 
-                            ? { ...m, data: [...m.data, entryData] } 
-                            : m
-                    );
-                    setMembers(updated);
-                } else {
-                    const newId = String(members.length + 1).padStart(3, '0');
-                    setMembers([...members, { 
-                        id: newId, 
-                        bed: newEntry.bed,
-                        name: newEntry.name,
-                        gender: newEntry.gender,
-                        birthday: newEntry.birthday,
-                        data: [entryData]
-                    }]);
-                }
-                alert('新增成功！');
-                setNewEntry({
-                    date: new Date().toISOString().split('T')[0],
-                    bed: '',
-                    name: '',
-                    birthday: '',
-                    gender: '',
-                    height: '',
-                    weight: '',
-                    bodyFat: '',
-                    sMM: '',
-                    bmr: '',
-                    bodyAge: '',
-                    visceralFat: '',
-                    waist: '',
-                    hip: '',
-                    situps: '',
-                    walk6m: '',
-                    sitStand: '',
-                    sitReach: ''
-                });
-            }, [members, newEntry]);
-
-            const bodyChartData = useMemo(() => [
-                { d: '2023-01', v: 75 },
-                { d: '2023-06', v: 74 },
-                { d: '2024-01', v: 72 }
-            ], []);
-
-            const perfChartData = useMemo(() => [
-                { d: '2023-01', v: 320 },
-                { d: '2023-06', v: 345 },
-                { d: '2024-01', v: 370 }
-            ], []);
-
-            const fields1 = [
-                { l: 'BMI', v: evalResults?.bmi || '-', s: evalResults?.bmiEval?.text || '', h: '18.5-24', c: evalResults?.bmiEval?.color || 'text-blue-600' },
-                { l: '體重', v: `${selectedUser?.data[selectedUser?.data.length - 1]?.weight || 0}kg`, s: '', h: `${evalResults?.bmiMin || 0}-${evalResults?.bmiMax || 0}kg`, c: 'text-blue-600' },
-                { l: '體脂率', v: selectedUser?.data[selectedUser?.data.length - 1]?.bodyFat || 0, s: evalResults?.fatEval?.text || '', h: evalResults?.fatLimit || '', c: evalResults?.fatEval?.color || 'text-blue-600' },
-                { l: '骨骼肌量', v: selectedUser?.data[selectedUser?.data.length - 1]?.sMM || 0, s: evalResults?.smmEval?.text || '', h: evalResults?.smmMin || '', c: evalResults?.smmEval?.color || 'text-blue-600' },
-                { l: '肌肉重量', v: `${evalResults?.sMMweight || 0}kg`, s: '', h: '', c: 'text-blue-600' },
-                { l: 'SMI', v: evalResults?.smi || 0, s: evalResults?.smiEval?.text || '', h: evalResults?.smiLimit || '', c: evalResults?.smiEval?.color || 'text-blue-600' },
-                { l: '內臟脂肪', v: selectedUser?.data[selectedUser?.data.length - 1]?.visceralFat || 0, s: evalResults?.vfEval?.text || '', h: '1-9', c: evalResults?.vfEval?.color || 'text-blue-600' },
-                { l: '腰臀比', v: evalResults?.whr || '0.00', s: evalResults?.whrEval?.text || '', h: evalResults?.whrStd || '', c: evalResults?.whrEval?.color || 'text-blue-600' },
-                { l: '生理年齡', v: evalResults?.ageDiffStr || 0, s: evalResults?.ageEval?.text || '', h: '', c: evalResults?.ageColor || 'text-blue-600' },
-                { l: '基礎代謝', v: selectedUser?.data[selectedUser?.data.length - 1]?.bmr || 0, s: '', h: 'kcal', c: 'text-blue-600' }
-            ];
-
-            const fields2 = [
-                { l: '仰臥起坐', v: selectedUser?.data[selectedUser?.data.length - 1]?.situps || 0, s: evalResults?.situpsEval?.text || '', h: '', c: evalResults?.situpsEval?.color || 'text-blue-600' },
-                { l: '6MWD', v: `${selectedUser?.data[selectedUser?.data.length - 1]?.walk6m || 0}m`, s: evalResults?.walkEval?.text || '', h: `${evalResults?.walkMin || 0}m`, c: evalResults?.walkEval?.color || 'text-blue-600' },
-                { l: '坐站30秒', v: selectedUser?.data[selectedUser?.data.length - 1]?.sitStand || 0, s: evalResults?.sitStandEval?.text || '', h: evalResults?.sitStandStd || '', c: evalResults?.sitStandEval?.color || 'text-blue-600' },
-                { l: '坐姿前屈', v: `${selectedUser?.data[selectedUser?.data.length - 1]?.sitReach || 0}cm`, s: evalResults?.reachEval?.text || '', h: '', c: evalResults?.reachEval?.color || 'text-blue-600' }
-            ];
-
-            return (
-                <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-                    {/* Header */}
-                    <header className="flex flex-col lg:flex-row justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-lg border border-slate-200 gap-6">
-                        <div className="flex flex-col">
-                            <h1 className="text-3xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2 flex items-center gap-3">
-                                <Activity className="w-8 h-8 text-indigo-600" />
-                                OT Supervisor Management Console
-                            </h1>
-                            <p className="text-slate-500 font-medium">職能治療督導管理系統</p>
-                        </div>
-                        <nav className="flex bg-slate-100 p-2 rounded-2xl shadow-inner">
-                            <button 
-                                onClick={() => setView('dashboard')}
-                                className={`px-6 py-3 rounded-xl font-bold transition-all duration-200 mx-1 ${
-                                    view === 'dashboard' 
-                                        ? 'bg-white shadow-lg text-indigo-600' 
-                                        : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50'
-                                }`}
-                            >
-                                儀表板
-                            </button>
-                            <button 
-                                onClick={() => setView('individual')}
-                                className={`px-6 py-3 rounded-xl font-bold transition-all duration-200 mx-1 ${
-                                    view === 'individual' 
-                                        ? 'bg-white shadow-lg text-indigo-600' 
-                                        : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50'
-                                }`}
-                            >
-                                個案報告
-                            </button>
-                            <button 
-                                onClick={() => setView('entry')}
-                                className={`px-6 py-3 rounded-xl font-bold transition-all duration-200 mx-1 ${
-                                    view === 'entry' 
-                                        ? 'bg-white shadow-lg text-indigo-600' 
-                                        : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50'
-                                }`}
-                            >
-                                資料輸入
-                            </button>
-                        </nav>
-                    </header>
-
-                    {/* Dashboard View */}
-                    {view === 'dashboard' && (
-                        <div className="space-y-8 max-w-7xl mx-auto">
-                            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 flex items-center gap-4">
-                                <Calendar className="w-5 h-5 text-slate-500" />
-                                <span className="text-sm font-bold text-slate-500">篩選日期</span>
-                                <div className="flex flex-wrap gap-2 flex-1">
-                                    {allDates.map(date => (
-                                        <button 
-                                            key={date} 
-                                            onClick={() => {
-                                                setSelectedDates(prev => 
-                                                    prev.includes(date) 
-                                                        ? prev.filter(d => d !== date) 
-                                                        : [...prev, date]
-                                                );
-                                            }}
-                                            className={`px-4 py-2 rounded-full text-xs font-medium transition-all duration-200 ${
-                                                selectedDates.includes(date) 
-                                                    ? 'bg-indigo-600 text-white shadow-lg' 
-                                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                            }`}
-                                        >
-                                            {date}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all duration-300">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-indigo-100 p-4 rounded-2xl text-indigo-600">
-                                            <Users className="w-8 h-8" />
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">總人數</p>
-                                            <h3 className="text-3xl font-black text-slate-800 mt-1">{filteredStats.memberTotal}</h3>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all duration-300">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-blue-100 p-4 rounded-2xl text-blue-600">
-                                            <User className="w-8 h-8" />
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">性別分布</p>
-                                            <h3 className="text-3xl font-black text-slate-800 mt-1">
-                                                {filteredStats.maleCount}♂ {filteredStats.femaleCount}♀
-                                            </h3>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all duration-300">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-emerald-100 p-4 rounded-2xl text-emerald-600">
-                                            <Calendar className="w-8 h-8" />
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">平均年齡</p>
-                                            <h3 className="text-3xl font-black text-slate-800 mt-1">{filteredStats.avgAge}歲</h3>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                <div className="bg-white p-8 rounded-3xl border-l-8 border-indigo-500 shadow-xl text-center hover:shadow-2xl transition-all duration-300">
-                                    <p className="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">BMI ≥ 27</p>
-                                    <h3 className="text-4xl font-black text-indigo-900">{filteredStats.bmiAlert}/{filteredStats.total}</h3>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl border-l-8 border-red-500 shadow-xl text-center hover:shadow-2xl transition-all duration-300">
-                                    <p className="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">內臟脂肪 ≥ 10</p>
-                                    <h3 className="text-4xl font-black text-red-600">{filteredStats.vfAlert}/{filteredStats.total}</h3>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl border-l-8 border-amber-500 shadow-xl text-center hover:shadow-2xl transition-all duration-300">
-                                    <p className="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">骨骼肌量 &lt; 30</p>
-                                    <h3 className="text-4xl font-black text-amber-600">{filteredStats.smmAlert}/{filteredStats.total}</h3>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl border-l-8 border-rose-500 shadow-xl text-center hover:shadow-2xl transition-all duration-300">
-                                    <p className="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">SMI 異常</p>
-                                    <h3 className="text-4xl font-black text-rose-600">{filteredStats.smiAlert}/{filteredStats.total}</h3>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <div className="bg-white p-8 rounded-3xl shadow-2xl border border-slate-100">
-                                    <div className="flex items-center gap-3 mb-8">
-                                        <Database className="w-6 h-6 text-slate-700" />
-                                        <h3 className="text-2xl font-bold text-slate-700">身體組成趨勢</h3>
-                                    </div>
-                                    <select 
-                                        value={bodyMetric} 
-                                        onChange={e => setBodyMetric(e.target.value)}
-                                        className="mb-8 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-200"
-                                    >
-                                        <option value="weight">體重 (kg)</option>
-                                        <option value="bodyFat">體脂率 (%)</option>
-                                        <option value="sMM">骨骼肌量 (%)</option>
-                                        <option value="visceralFat">內臟脂肪</option>
-                                        <option value="bmi">BMI</option>
-                                    </select>
-                                    <div className="h-80 bg-gradient-to-br from-slate-50 to-indigo-50 rounded-3xl border-2 border-slate-200 p-6">
-                                        <div className="h-full flex items-center justify-center">
-                                            <div className="text-center">
-                                                <div className="w-24 h-24 bg-gradient-to-r from-indigo-400 to-purple-500 rounded-3xl mx-auto mb-6 flex items-center justify-center shadow-2xl">
-                                                    <span className="text-2xl font-black text-white">📈</span>
-                                                </div>
-                                                <h4 className="font-bold text-xl mb-3 text-slate-700">趨勢圖表</h4>
-                                                <p className="text-4xl font-black text-emerald-600 mb-2">72.5</p>
-                                                <p className="text-sm text-slate-500">平均值 (最近3個月)</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-white p-8 rounded-3xl shadow-2xl border border-slate-100">
-                                    <div className="flex items-center gap-3 mb-8">
-                                        <Activity className="w-6 h-6 text-slate-700" />
-                                        <h3 className="text-2xl font-bold text-slate-700">功能表現趨勢</h3>
-                                    </div>
-                                    <select 
-                                        value={performanceMetric} 
-                                        onChange={e => setPerformanceMetric(e.target.value)}
-                                        className="mb-8 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-emerald-500 focus:ring-4 ring-emerald-100 transition-all duration-200"
-                                    >
-                                        <option value="walk6m">6分鐘步行距離</option>
-                                        <option value="situps">仰臥起坐</option>
-                                        <option value="sitReach">坐姿前屈</option>
-                                        <option value="sitStand">坐站30秒</option>
-                                    </select>
-                                    <div className="h-80 bg-gradient-to-br from-emerald-50 to-blue-50 rounded-3xl border-2 border-slate-200 p-6">
-                                        <div className="h-full flex items-center justify-center">
-                                            <div className="text-center">
-                                                <div className="w-24 h-24 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-3xl mx-auto mb-6 flex items-center justify-center shadow-2xl">
-                                                    <span className="text-2xl font-black text-white">⚡</span>
-                                                </div>
-                                                <h4 className="font-bold text-xl mb-3 text-slate-700">趨勢圖表</h4>
-                                                <p className="text-4xl font-black text-indigo-600 mb-2">345</p>
-                                                <p className="text-sm text-slate-500">平均值 (最近3個月)</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Individual Report View */}
-                    {view === 'individual' && (
-                        <div className="max-w-6xl mx-auto space-y-8">
-                            <div className="bg-white p-8 rounded-3xl shadow-2xl border border-slate-100 flex items-center gap-6">
-                                <span className="text-slate-500 font-bold text-lg bg-slate-100 px-4 py-2 rounded-2xl">選擇個案報告</span>
-                                <select 
-                                    value={selectedUserId} 
-                                    onChange={e => setSelectedUserId(e.target.value)}
-                                    className="flex-1 p-4 bg-gradient-to-r from-slate-50 to-indigo-50 border-2 border-slate-200 rounded-3xl text-xl font-bold focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-300"
-                                >
-                                    <option value="">-- 請選擇個案 --</option>
-                                    {sortedMembers.map(m => (
-                                        <option key={m.id} value={m.id}>
-                                            {m.id} - {m.name} ({m.bed}) - {m.gender}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {selectedUser && evalResults && (
-                                <div id="report-content">
-                                    <div className="bg-white p-12 rounded-3xl shadow-2xl border-4 border-slate-100 min-h-[1200px]">
-                                        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 pb-8 border-b-4 border-indigo-100">
-                                            <div>
-                                                <h2 className="text-5xl font-black bg-gradient-to-r from-slate-800 via-indigo-900 to-slate-800 bg-clip-text text-transparent mb-4">
-                                                    {selectedUser.name} 個案報告
-                                                </h2>
-                                                <p className="text-2xl text-slate-500 font-semibold">
-                                                    {calculateAge(selectedUser.birthday)}歲 | {selectedUser.gender} | 
-                                                    最新資料：{selectedUser.data[selectedUser.data.length - 1]?.date}
-                                                </p>
-                                            </div>
-                                            <button 
-                                                onClick={() => window.print()}
-                                                className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-10 py-6 rounded-3xl text-xl font-black shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 flex items-center gap-3 mt-8 lg:mt-0"
-                                            >
-                                                <Download className="w-6 h-6" />
-                                                下載 PDF 列印
-                                            </button>
-                                        </div>
-
-                                        <div className="mb-16">
-                                            <h4 className="text-2xl font-black text-indigo-700 mb-8 pb-6 border-b-4 border-indigo-200 flex items-center gap-4">
-                                                <User className="w-10 h-10" />
-                                                <span>1. 身體組成評估結果</span>
-                                            </h4>
-                                            <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
-                                                {fields1.map((item, i) => (
-                                                    <div key={i} className="group p-6 rounded-3xl bg-gradient-to-br from-slate-50 to-indigo-50 border-2 border-slate-200 hover:border-indigo-300 hover:shadow-xl transition-all duration-300 h-32 flex flex-col justify-between relative overflow-hidden">
-                                                        <div>
-                                                            <p className={`text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 group-hover:text-indigo-600 transition-colors`}>{item.l}</p>
-                                                            <p className={`text-3xl font-black leading-tight ${item.c} group-hover:scale-105 transition-transform`}>{item.v}</p>
-                                                        </div>
-                                                        <div className="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
-                                                            <span className={`text-2xl font-black ${item.c}`}>{item.s}</span>
-                                                            <span className="text-xs text-slate-400 font-bold">{item.h}</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-20">
-                                            <div className="space-y-8">
-                                                <h4 className="text-2xl font-black text-slate-700 flex items-center gap-4 border-b-4 border-slate-200 pb-6">
-                                                    <PieChart className="w-10 h-10 text-indigo-600" />
-                                                    PR 綜合評估雷達圖
-                                                </h4>
-                                                <div className="h-96 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-3xl border-4 border-indigo-100 p-8 flex flex-col items-center justify-center shadow-2xl">
-                                                    <div className="w-64 h-64 bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full flex items-center justify-center shadow-2xl mb-8">
-                                                        <span className="text-4xl font-black text-white">PR 65</span>
-                                                    </div>
-                                                    <div className="text-center bg-white p-8 rounded-3xl shadow-xl border-4 border-indigo-200 w-full">
-                                                        <p className="text-2xl font-bold text-indigo-700 mb-4">綜合表現評分</p>
-                                                        <p className="text-5xl font-black text-indigo-900 mb-2">65</p>
-                                                        <p className="text-sm text-slate-500 uppercase tracking-wide">PR分數 (0-100)</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div>
-                                                <h4 className="text-2xl font-black text-emerald-700 mb-8 pb-6 border-b-4 border-emerald-200 flex items-center gap-4">
-                                                    <Activity className="w-10 h-10" />
-                                                    <span>2. 功能表現評估</span>
-                                                </h4>
-                                                <div className="space-y-6">
-                                                    {fields2.map((item, i) => (
-                                                        <div key={i} className="flex justify-between items-center bg-white p-8 rounded-3xl border-l-8 border-emerald-500 shadow-2xl hover:shadow-3xl transition-all duration-300 h-32">
-                                                            <div className="flex flex-col justify-center">
-                                                                <p className="text-sm text-slate-400 font-bold uppercase tracking-wide">{item.l}</p>
-                                                                <p className={`text-4xl font-black text-slate-800 leading-tight ${item.c}`}>{item.v}</p>
-                                                            </div>
-                                                            <div className="flex flex-col items-end justify-between h-full py-2 text-right">
-                                                                <p className={`text-2xl font-black ${item.c}`}>{item.s}</p>
-                                                                <p className="text-lg text-slate-500 font-bold">{item.h}</p>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-gradient-to-r from-indigo-50 to-emerald-50 rounded-3xl p-12 border-4 border-white shadow-2xl break-before-page">
-                                            <h3 className="text-3xl font-black mb-12 text-slate-800 text-center italic border-b-4 border-indigo-200 pb-8">趨勢分析與介入建議</h3>
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                                                <div className="bg-white p-10 rounded-3xl shadow-2xl border-4 border-indigo-100">
-                                                    <h4 className="text-2xl font-black text-indigo-700 mb-8 flex items-center gap-4">
-                                                        <Heart className="w-10 h-10" />
-                                                        OT 介入建議
-                                                    </h4>
-                                                    <ul className="text-xl text-slate-700 space-y-6 list-disc pl-8 leading-relaxed">
-                                                        <li className="border-l-4 border-indigo-400 pl-6 py-4 bg-indigo-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-indigo-800 block">減重訓練計劃</strong>
-                                                            每周3次 × 45分鐘有氧運動
-                                                        </li>
-                                                        <li className="border-l-4 border-emerald-400 pl-6 py-4 bg-emerald-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-emerald-800 block">肌力訓練</strong>
-                                                            全身重量訓練每周2-3次
-                                                        </li>
-                                                        <li className="border-l-4 border-amber-400 pl-6 py-4 bg-amber-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-amber-800 block">平衡訓練</strong>
-                                                            改善核心穩定性與協調性
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                                <div className="bg-white p-10 rounded-3xl shadow-2xl border-4 border-emerald-100">
-                                                    <h4 className="text-2xl font-black text-emerald-700 mb-8 flex items-center gap-4">
-                                                        <Coffee className="w-10 h-10" />
-                                                        生活功能指導
-                                                    </h4>
-                                                    <ul className="text-xl text-slate-700 space-y-6 list-disc pl-8 leading-relaxed">
-                                                        <li className="border-l-4 border-blue-400 pl-6 py-4 bg-blue-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-blue-800 block">規律飲食</strong>
-                                                            控制熱量攝取，均衡營養
-                                                        </li>
-                                                        <li className="border-l-4 border-purple-400 pl-6 py-4 bg-purple-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-purple-800 block">充足睡眠</strong>
-                                                            每晚7-8小時優質睡眠
-                                                        </li>
-                                                        <li className="border-l-4 border-rose-400 pl-6 py-4 bg-rose-50 rounded-r-2xl">
-                                                            <strong className="text-2xl text-rose-800 block">壓力管理</strong>
-                                                            每日冥想與放鬆訓練
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Entry View */}
-                    {view === 'entry' && (
-                        <div className="max-w-4xl mx-auto space-y-8">
-                            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white p-12 rounded-3xl shadow-2xl text-center">
-                                <h2 className="text-4xl font-black mb-4 flex items-center justify-center gap-4 mx-auto">
-                                    <PlusCircle className="w-16 h-16" />
-                                    新增職能評估資料
-                                </h2>
-                                <p className="text-xl opacity-90">快速將評估結果存入系統資料庫</p>
-                                <div className="mt-8 p-4 bg-white/20 backdrop-blur-sm rounded-2xl flex justify-center items-center gap-4">
-                                    <label className="text-lg font-bold opacity-90">評估日期</label>
-                                    <input 
-                                        type="date" 
-                                        value={newEntry.date} 
-                                        onChange={e => setNewEntry({...newEntry, date: e.target.value})}
-                                        className="bg-white/50 backdrop-blur-sm px-6 py-3 rounded-2xl text-xl font-bold border-2 border-white/50 focus:border-white w-64"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-12 rounded-3xl shadow-2xl border-4 border-slate-100">
-                                <h4 className="text-3xl font-black text-slate-800 mb-12 flex items-center gap-4 border-b-4 border-slate-200 pb-8">
-                                    <Info className="w-12 h-12 text-indigo-600" />
-                                    1. 基本資料
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">床號</label>
-                                        <input 
-                                            type="text" 
-                                            value={newEntry.bed} 
-                                            onChange={e => setNewEntry({...newEntry, bed: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-300 placeholder-slate-400"
-                                            placeholder="A01"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">姓名</label>
-                                        <input 
-                                            type="text" 
-                                            value={newEntry.name} 
-                                            onChange={e => setNewEntry({...newEntry, name: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-300 placeholder-slate-400"
-                                            placeholder="王大明"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">生日</label>
-                                        <input 
-                                            type="date" 
-                                            value={newEntry.birthday} 
-                                            onChange={e => setNewEntry({...newEntry, birthday: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-300"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">性別</label>
-                                        <select 
-                                            value={newEntry.gender} 
-                                            onChange={e => setNewEntry({...newEntry, gender: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-indigo-500 focus:ring-4 ring-indigo-100 transition-all duration-300"
-                                        >
-                                            <option value="">請選擇</option>
-                                            <option value="男">男</option>
-                                            <option value="女">女</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-12 rounded-3xl shadow-2xl border-4 border-slate-100">
-                                <h4 className="text-3xl font-black text-slate-800 mb-12 flex items-center gap-4 border-b-4 border-slate-200 pb-8">
-                                    <Database className="w-12 h-12 text-emerald-600" />
-                                    2. 身體組成資料
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                    {[
-                                        { l: '身高 (cm)', k: 'height' },
-                                        { l: '體重 (kg)', k: 'weight' },
-                                        { l: '體脂率 (%)', k: 'bodyFat' },
-                                        { l: '骨骼肌量 (%)', k: 'sMM' },
-                                        { l: '基礎代謝 (kcal)', k: 'bmr' },
-                                        { l: '生理年齡 (歲)', k: 'bodyAge' },
-                                        { l: '內臟脂肪等級', k: 'visceralFat' },
-                                        { l: '腰圍 (cm)', k: 'waist' },
-                                        { l: '臀圍 (cm)', k: 'hip' }
-                                    ].map(f => (
-                                        <div key={f.k} className="space-y-2">
-                                            <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">{f.l}</label>
-                                            <input 
-                                                type="number" 
-                                                step="0.1" 
-                                                value={newEntry[f.k]} 
-                                                onChange={e => setNewEntry({...newEntry, [f.k]: e.target.value})}
-                                                className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-emerald-500 focus:ring-4 ring-emerald-100 transition-all duration-300 placeholder-slate-400"
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                    ))}
-                                    <div className="space-y-2 lg:col-span-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">腰臀比 (WHR)</label>
-                                        <input 
-                                            disabled 
-                                            value={newEntry.waist && newEntry.hip ? (parseFloat(newEntry.waist) / parseFloat(newEntry.hip)).toFixed(2) : ''}
-                                            className="w-full p-6 border-2 border-slate-300 rounded-3xl text-xl font-bold bg-slate-100 cursor-not-allowed"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-12 rounded-3xl shadow-2xl border-4 border-slate-100">
-                                <h4 className="text-3xl font-black text-slate-800 mb-12 flex items-center gap-4 border-b-4 border-slate-200 pb-8">
-                                    <Activity className="w-12 h-12 text-amber-600" />
-                                    3. 功能測驗資料
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">仰臥起坐 (次)</label>
-                                        <input 
-                                            type="number" 
-                                            value={newEntry.situps} 
-                                            onChange={e => setNewEntry({...newEntry, situps: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-amber-500 focus:ring-4 ring-amber-100 transition-all duration-300"
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">6分鐘步行 (m)</label>
-                                        <input 
-                                            type="number" 
-                                            value={newEntry.walk6m} 
-                                            onChange={e => setNewEntry({...newEntry, walk6m: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-amber-500 focus:ring-4 ring-amber-100 transition-all duration-300"
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">坐站30秒 (次)</label>
-                                        <input 
-                                            type="number" 
-                                            value={newEntry.sitStand} 
-                                            onChange={e => setNewEntry({...newEntry, sitStand: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-amber-500 focus:ring-4 ring-amber-100 transition-all duration-300"
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide">坐姿前屈 (cm)</label>
-                                        <input 
-                                            type="number" 
-                                            value={newEntry.sitReach} 
-                                            onChange={e => setNewEntry({...newEntry, sitReach: e.target.value})}
-                                            className="w-full p-6 border-2 border-slate-200 rounded-3xl text-xl font-bold bg-slate-50 focus:border-amber-500 focus:ring-4 ring-amber-100 transition-all duration-300"
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button 
-                                onClick={handleAddEntry}
-                                className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white p-12 rounded-4xl text-3xl font-black shadow-2xl hover:shadow-3xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-4 text-shadow-lg"
-                            >
-                                <Database className="w-12 h-12" />
-                                儲存並新增到資料庫
-                            </button>
-                        </div>
-                    )}
+    <!-- Dashboard View -->
+    <div id="dashboard" class="view">
+        <div class="space-y-6">
+            <!-- Date Filter -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border flex items-center gap-4">
+                <svg class="w-5 h-5 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-sm font-bold text-slate-500">篩選日期</span>
+                <div class="flex flex-wrap gap-2 flex-1">
+                    <button class="px-4 py-2 bg-indigo-600 text-white rounded-full text-xs font-medium shadow-lg">2023-01-15</button>
+                    <button class="px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-medium hover:bg-slate-200">2024-06-10</button>
+                    <button class="px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-medium hover:bg-slate-200">2024-06-12</button>
                 </div>
-            );
-        };
+            </div>
 
-        // Render App
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-        
-        // Initialize Lucide icons
-        lucide.createIcons();
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
+                    <div class="flex items-center gap-4">
+                        <div class="bg-indigo-100 p-4 rounded-2xl text-indigo-600">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M1 4.75A2.75 2.75 0 013.75 2h12.5a2.75 2.75 0 012.75 2.75v12.5A2.75 2.75 0 0116.25 20H3.75A2.75 2.75 0 011 17.25V4.75zM3.75 3.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V4.75a.25.25 0 00-.25-.25H3.75z" clip-rule="evenodd"/>
+                                <path d="M7 6a1 1 0 100 2h6a1 1 0 100-2H7zM7 10a1 1 0 100 2h6a1 1 0 100-2H7z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">總人數</p>
+                            <h3 class="text-3xl font-black text-slate-700 mt-1">2</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
+                    <div class="flex items-center gap-4">
+                        <div class="bg-blue-100 p-4 rounded-2xl text-blue-600">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">性別分布</p>
+                            <h3 class="text-3xl font-black text-slate-700 mt-1">1♂ 1♀</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
+                    <div class="flex items-center gap-4">
+                        <div class="bg-emerald-100 p-4 rounded-2xl text-emerald-600">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">平均年齡</p>
+                            <h3 class="text-3xl font-black text-slate-700 mt-1">37.5歲</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-white p-8 rounded-3xl border-l-8 border-indigo-500 shadow-xl text-center hover:shadow-2xl">
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">BMI ≥ 27</p>
+                    <h3 class="text-4xl font-black text-indigo-900">0/2</h3>
+                </div>
+                <div class="bg-white p-8 rounded-3xl border-l-8 border-red-500 shadow-xl text-center hover:shadow-2xl">
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">VF ≥ 10</p>
+                    <h3 class="text-4xl font-black text-red-600">1/2</h3>
+                </div>
+                <div class="bg-white p-8 rounded-3xl border-l-8 border-amber-500 shadow-xl text-center hover:shadow-2xl">
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">SMM &lt; 30</p>
+                    <h3 class="text-4xl font-black text-amber-600">1/2</h3>
+                </div>
+                <div class="bg-white p-8 rounded-3xl border-l-8 border-rose-500 shadow-xl text-center hover:shadow-2xl">
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">SMI 異常</p>
+                    <h3 class="text-4xl font-black text-rose-600">0/2</h3>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="lg:col-span-1 bg-white p-8 rounded-3xl shadow-2xl border">
+                    <h3 class="font-bold text-slate-700 text-2xl mb-6 flex items-center gap-2">
+                        📊 身體組成趨勢
+                    </h3>
+                    <select class="mb-6 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-indigo-500">
+                        <option>體重 (kg)</option>
+                        <option>體脂率</option>
+                        <option>骨骼肌量</option>
+                        <option>內臟脂肪</option>
+                        <option>BMI</option>
+                    </select>
+                    <div class="h-80 chart-placeholder">
+                        📈 趨勢圖表區域
+                    </div>
+                </div>
+                <div class="lg:col-span-1 bg-white p-8 rounded-3xl shadow-2xl border">
+                    <h3 class="font-bold text-slate-700 text-2xl mb-6 flex items-center gap-2">
+                        ⚡ 功能表現趨勢
+                    </h3>
+                    <select class="mb-6 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-emerald-500">
+                        <option>6分鐘步行</option>
+                        <option>仰臥起坐</option>
+                        <option>坐姿前屈</option>
+                        <option>坐站30秒</option>
+                    </select>
+                    <div class="h-80 chart-placeholder">
+                        ⚡ 趨勢圖表區域
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Individual Report View -->
+    <div id="individual" class="view hidden">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl border max-w-4xl mx-auto">
+            <div class="flex justify-between items-start mb-8">
+                <div>
+                    <h2 class="text-4xl font-black bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-2">
+                        王大明 個案報告
+                    </h2>
+                    <p class="text-xl text-slate-500">39歲 男 (2024-06-10)</p>
+                </div>
+                <button onclick="window.print()" 
+                        class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center gap-3">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V6a1 1 0 112 0v4.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                    </svg>
+                    PDF 列印
+                </button>
+            </div>
+
+            <!-- Body Composition -->
+            <div class="mb-12">
+                <h3 class="text-2xl font-bold text-indigo-600 mb-8 border-b pb-4 flex items-center gap-3">
+                    👤 1. 身體組成評估
+                </h3>
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-6">
+                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">BMI</p>
+                            <p class="text-3xl font-black text-indigo-900">24.5</p>
+                        </div>
+                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
+                            <span class="text-xl font-black text-red-600">偏高</span>
+                            <span class="text-xs text-slate-400 font-bold">18.5-24</span>
+                        </div>
+                    </div>
+                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">體重</p>
+                            <p class="text-3xl font-black text-blue-600">75kg</p>
+                        </div>
+                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
+                            <span class="text-xl font-black text-blue-600"></span>
+                            <span class="text-xs text-slate-400 font-bold">65-80kg</span>
+                        </div>
+                    </div>
+                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">體脂率</p>
+                            <p class="text-3xl font-black text-blue-600">21</p>
+                        </div>
+                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
+                            <span class="text-xl font-black text-blue-600">正常</span>
+                            <span class="text-xs text-slate-400 font-bold">20</span>
+                        </div>
+                    </div>
+                    <!-- More cards... -->
+                </div>
+            </div>
+
+            <!-- Performance Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+                <div class="bg-slate-50 p-8 rounded-3xl border">
+                    <p class="text-xs font-bold text-slate-500 mb-4">1. 體脂率 & 骨骼肌量</p>
+                    <div class="h-64 chart-placeholder">📊 趨勢圖表</div>
+                </div>
+                <div class="bg-slate-50 p-8 rounded-3xl border">
+                    <p class="text-xs font-bold text-slate-500 mb-4">2. 6MWD</p>
+                    <div class="h-64 chart-placeholder">📈 趨勢圖表</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Entry View -->
+    <div id="entry" class="view hidden max-w-3xl mx-auto space-y-6">
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-12 rounded-3xl shadow-2xl text-center">
+            <h2 class="text-4xl font-black mb-4">➕ Google Sheets 快速輸入</h2>
+            <p class="opacity-90 text-xl">將評估資料快速存入系統</p>
+        </div>
+
+        <!-- Basic Info -->
+        <div class="bg-white p-8 rounded-3xl shadow-lg border">
+            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
+                📋 1. 基本資料
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-bold text-slate-500 mb-2">床號</label>
+                    <input type="text" id="bed" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg" placeholder="A01">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-500 mb-2">姓名</label>
+                    <input type="text" id="name" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg" placeholder="王大明">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-500 mb-2">生日</label>
+                    <input type="date" id="birthday" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-500 mb-2">性別</label>
+                    <select id="gender" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg">
+                        <option>請選擇</option>
+                        <option>男</option>
+                        <option>女</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Body Composition -->
+        <div class="bg-white p-8 rounded-3xl shadow-lg border">
+            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
+                💪 2. 身體組成 Key-in
+            </h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div><label class="block text-xs text-slate-500 mb-1">身高 cm</label><input type="number" id="height" class="w-full p-4 border rounded-2xl text-lg" placeholder="175"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">體重 kg</label><input type="number" id="weight" class="w-full p-4 border rounded-2xl text-lg" placeholder="75"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">體脂率 %</label><input type="number" id="bodyFat" class="w-full p-4 border rounded-2xl text-lg" placeholder="21"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">骨骼肌量 %</label><input type="number" id="sMM" class="w-full p-4 border rounded-2xl text-lg" placeholder="33"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">內臟脂肪</label><input type="number" id="visceralFat" class="w-full p-4 border rounded-2xl text-lg" placeholder="9"></div>
+            </div>
+        </div>
+
+        <!-- Performance Tests -->
+        <div class="bg-white p-8 rounded-3xl shadow-lg border">
+            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
+                🏃 3. 功能測驗 Key-in
+            </h3>
+            <div class="grid grid-cols-2 gap-6">
+                <div><label class="block text-xs text-slate-500 mb-1">仰臥起坐</label><input type="number" id="situps" class="w-full p-4 border rounded-2xl text-lg" placeholder="18"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">6MWD m</label><input type="number" id="walk6m" class="w-full p-4 border rounded-2xl text-lg" placeholder="450"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">坐站30秒</label><input type="number" id="sitStand" class="w-full p-4 border rounded-2xl text-lg" placeholder="18"></div>
+                <div><label class="block text-xs text-slate-500 mb-1">坐姿前屈 cm</label><input type="number" id="sitReach" class="w-full p-4 border rounded-2xl text-lg" placeholder="12"></div>
+            </div>
+        </div>
+
+        <button onclick="generateCSV()" 
+                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8 rounded-3xl font-black text-2xl shadow-2xl hover:scale-105 transition-all duration-300">
+            📤 產生CSV 匯入Google Sheets
+        </button>
+    </div>
+
+    <script>
+        function showView(viewName) {
+            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+            document.getElementById(viewName).classList.remove('hidden');
+        }
+
+        function generateCSV() {
+            const data = {
+                id: document.getElementById('bed').value.slice(0,3) || '001',
+                bed: document.getElementById('bed').value || '',
+                name: document.getElementById('name').value || '',
+                gender: document.getElementById('gender').value || '',
+                birthday: document.getElementById('birthday').value || '',
+                date: new Date().toISOString().split('T')[0],
+                weight: document.getElementById('weight').value || '',
+                height: document.getElementById('height').value || '',
+                bodyFat: document.getElementById('bodyFat').value || '',
+                sMM: document.getElementById('sMM').value || '',
+                visceralFat: document.getElementById('visceralFat').value || '',
+                sitStand: document.getElementById('sitStand').value || '',
+                walk6m: document.getElementById('walk6m').value || '',
+                sitReach: document.getElementById('sitReach').value || '',
+                situps: document.getElementById('situps').value || '',
+                waist: '88',
+                hip: '90',
+                bmr: '1720',
+                bodyAge: '38'
+            };
+            
+            const csv = Object.values(data).join(',');
+            navigator.clipboard.writeText(csv).then(() => {
+                alert('✅ CSV資料已複製到剪貼簿！\n請貼到Google Sheets第2列');
+                showView('dashboard');
+            });
+        }
+
+        // Initialize
+        showView('dashboard');
     </script>
 </body>
 </html>
