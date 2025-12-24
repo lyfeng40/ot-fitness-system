@@ -1,365 +1,495 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OT Supervisor Management Console</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .view { min-height: 70vh; }
-        
-        @media print {
-            body * { visibility: hidden; }
-            #report-content, #report-content * { 
-                visibility: visible !important; 
-                position: absolute; 
-                left: 0; 
-                top: 0; 
-                width: 100%; 
-            }
-            .break-before-page { page-break-before: always; margin-top: 1cm; }
-        }
-        
-        .chart-placeholder {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            border: 2px dashed #cbd5e1;
-            border-radius: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #64748b;
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-    </style>
-</head>
-<body class="bg-gradient-to-br from-indigo-50 to-slate-50 min-h-screen p-4 md:p-8">
-    
-    <!-- Header -->
-    <header class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
-        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-            <div>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                    OT Supervisor Dashboard
-                </h1>
-                <p class="text-slate-500 font-medium">職能治療督導管理系統</p>
-            </div>
-            <nav class="flex bg-slate-100 p-2 rounded-xl space-x-2 w-full lg:w-auto">
-                <button onclick="showView('dashboard')" 
-                        class="px-6 py-3 rounded-xl font-bold text-indigo-600 bg-white shadow-lg">
-                    儀表板
-                </button>
-                <button onclick="showView('individual')" 
-                        class="px-6 py-3 rounded-xl font-bold text-slate-600 hover:text-indigo-600 bg-slate-50">
-                    個案報告
-                </button>
-                <button onclick="showView('entry')" 
-                        class="px-6 py-3 rounded-xl font-bold text-slate-600 hover:text-indigo-600 bg-slate-50">
-                    資料輸入
-                </button>
-            </nav>
-        </div>
-    </header>
 
-    <!-- Dashboard View -->
-    <div id="dashboard" class="view">
-        <div class="space-y-6">
-            <!-- Date Filter -->
-            <div class="bg-white p-6 rounded-2xl shadow-lg border flex items-center gap-4">
-                <svg class="w-5 h-5 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-sm font-bold text-slate-500">篩選日期</span>
-                <div class="flex flex-wrap gap-2 flex-1">
-                    <button class="px-4 py-2 bg-indigo-600 text-white rounded-full text-xs font-medium shadow-lg">2023-01-15</button>
-                    <button class="px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-medium hover:bg-slate-200">2024-06-10</button>
-                    <button class="px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-medium hover:bg-slate-200">2024-06-12</button>
-                </div>
-            </div>
+import React, { useState, useMemo } from 'react';
+import {
+ LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+ RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
+} from 'recharts';
+import {
+ User, Activity, Clipboard, Download,
+ PlusCircle, Database, Calendar, PieChart, Info, Heart, Coffee, Users
+} from 'lucide-react';
 
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-indigo-100 p-4 rounded-2xl text-indigo-600">
-                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M1 4.75A2.75 2.75 0 013.75 2h12.5a2.75 2.75 0 012.75 2.75v12.5A2.75 2.75 0 0116.25 20H3.75A2.75 2.75 0 011 17.25V4.75zM3.75 3.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V4.75a.25.25 0 00-.25-.25H3.75z" clip-rule="evenodd"/>
-                                <path d="M7 6a1 1 0 100 2h6a1 1 0 100-2H7zM7 10a1 1 0 100 2h6a1 1 0 100-2H7z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">總人數</p>
-                            <h3 class="text-3xl font-black text-slate-700 mt-1">2</h3>
-                        </div>
-                    </div>
-                </div>
+// --- 輔助函數與標準定義 ---
+const calculateAge = (birthday) => {
+ if (!birthday) return 0;
+ const birthDate = new Date(birthday);
+ const today = new Date();
+ let age = today.getFullYear() - birthDate.getFullYear();
+ const m = today.getMonth() - birthDate.getMonth();
+ if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+ return age;
+};
 
-                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-blue-100 p-4 rounded-2xl text-blue-600">
-                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">性別分布</p>
-                            <h3 class="text-3xl font-black text-slate-700 mt-1">1♂ 1♀</h3>
-                        </div>
-                    </div>
-                </div>
+// 仰臥起坐常模等級判斷
+const getSitupsLevel = (count, gender, age) => {
+ if (gender === '男') {
+   if (count >= 45) return { text: "很好", color: "text-blue-600" };
+   if (count >= 35) return { text: "良好", color: "text-blue-600" };
+   if (count >= 25) return { text: "適當", color: "text-blue-600" };
+   if (count >= 15) return { text: "稍差", color: "text-red-600" };
+   return { text: "不好", color: "text-red-600" };
+ } else {
+   if (count >= 35) return { text: "很好", color: "text-blue-600" };
+   if (count >= 25) return { text: "良好", color: "text-blue-600" };
+   if (count >= 15) return { text: "適當", color: "text-blue-600" };
+   if (count >= 10) return { text: "稍差", color: "text-red-600" };
+   return { text: "不好", color: "text-red-600" };
+ }
+};
 
-                <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-emerald-100 p-4 rounded-2xl text-emerald-600">
-                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">平均年齡</p>
-                            <h3 class="text-3xl font-black text-slate-700 mt-1">37.5歲</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
+const getDetailedEvaluation = (m, gender, age) => {
+ if (!m || !m.data || m.data.length === 0) return null;
+ const d = m.data[m.data.length - 1];
+ const h_m = d.height / 100;
+ const bmi = (d.weight / (h_m * h_m)).toFixed(1);
+ const sMM_weight = (d.weight * d.sMM / 100).toFixed(1);
+ const smi = (sMM_weight / (h_m * h_m)).toFixed(2);
+ const whr = (d.waist / d.hip).toFixed(2);
 
-            <!-- Alert Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-white p-8 rounded-3xl border-l-8 border-indigo-500 shadow-xl text-center hover:shadow-2xl">
-                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">BMI ≥ 27</p>
-                    <h3 class="text-4xl font-black text-indigo-900">0/2</h3>
-                </div>
-                <div class="bg-white p-8 rounded-3xl border-l-8 border-red-500 shadow-xl text-center hover:shadow-2xl">
-                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">VF ≥ 10</p>
-                    <h3 class="text-4xl font-black text-red-600">1/2</h3>
-                </div>
-                <div class="bg-white p-8 rounded-3xl border-l-8 border-amber-500 shadow-xl text-center hover:shadow-2xl">
-                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">SMM &lt; 30</p>
-                    <h3 class="text-4xl font-black text-amber-600">1/2</h3>
-                </div>
-                <div class="bg-white p-8 rounded-3xl border-l-8 border-rose-500 shadow-xl text-center hover:shadow-2xl">
-                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wide mb-2">SMI 異常</p>
-                    <h3 class="text-4xl font-black text-rose-600">0/2</h3>
-                </div>
-            </div>
+ // BMI
+ const bmiMax = (24 * h_m * h_m).toFixed(1);
+ const bmiMin = (18.5 * h_m * h_m).toFixed(1);
+ let bmiEval = { text: "標準", color: "text-blue-600" };
+ if (bmi < 18.5) bmiEval = { text: "低於標準", color: "text-red-600" };
+ else if (bmi >= 24) bmiEval = { text: "高於標準", color: "text-red-600" };
 
-            <!-- Charts -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div class="lg:col-span-1 bg-white p-8 rounded-3xl shadow-2xl border">
-                    <h3 class="font-bold text-slate-700 text-2xl mb-6 flex items-center gap-2">
-                        📊 身體組成趨勢
-                    </h3>
-                    <select class="mb-6 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-indigo-500">
-                        <option>體重 (kg)</option>
-                        <option>體脂率</option>
-                        <option>骨骼肌量</option>
-                        <option>內臟脂肪</option>
-                        <option>BMI</option>
-                    </select>
-                    <div class="h-80 chart-placeholder">
-                        📈 趨勢圖表區域
-                    </div>
-                </div>
-                <div class="lg:col-span-1 bg-white p-8 rounded-3xl shadow-2xl border">
-                    <h3 class="font-bold text-slate-700 text-2xl mb-6 flex items-center gap-2">
-                        ⚡ 功能表現趨勢
-                    </h3>
-                    <select class="mb-6 w-full p-3 bg-slate-50 rounded-2xl text-lg border-2 border-slate-200 focus:border-emerald-500">
-                        <option>6分鐘步行</option>
-                        <option>仰臥起坐</option>
-                        <option>坐姿前屈</option>
-                        <option>坐站30秒</option>
-                    </select>
-                    <div class="h-80 chart-placeholder">
-                        ⚡ 趨勢圖表區域
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+ // 體脂
+ const fatLimit = gender === "男" ? 20 : 30;
+ const fatEval = d.bodyFat > fatLimit ? { text: "高於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-    <!-- Individual Report View -->
-    <div id="individual" class="view hidden">
-        <div class="bg-white p-8 rounded-3xl shadow-2xl border max-w-4xl mx-auto">
-            <div class="flex justify-between items-start mb-8">
-                <div>
-                    <h2 class="text-4xl font-black bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-2">
-                        王大明 個案報告
-                    </h2>
-                    <p class="text-xl text-slate-500">39歲 男 (2024-06-10)</p>
-                </div>
-                <button onclick="window.print()" 
-                        class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center gap-3">
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V6a1 1 0 112 0v4.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
-                    </svg>
-                    PDF 列印
-                </button>
-            </div>
+ // 骨骼肌
+ const smmMin = gender === "男" ? 32.9 : 25.9;
+ const smmEval = d.sMM < smmMin ? { text: "低於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-            <!-- Body Composition -->
-            <div class="mb-12">
-                <h3 class="text-2xl font-bold text-indigo-600 mb-8 border-b pb-4 flex items-center gap-3">
-                    👤 1. 身體組成評估
-                </h3>
-                <div class="grid grid-cols-2 lg:grid-cols-5 gap-6">
-                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">BMI</p>
-                            <p class="text-3xl font-black text-indigo-900">24.5</p>
-                        </div>
-                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
-                            <span class="text-xl font-black text-red-600">偏高</span>
-                            <span class="text-xs text-slate-400 font-bold">18.5-24</span>
-                        </div>
-                    </div>
-                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">體重</p>
-                            <p class="text-3xl font-black text-blue-600">75kg</p>
-                        </div>
-                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
-                            <span class="text-xl font-black text-blue-600"></span>
-                            <span class="text-xs text-slate-400 font-bold">65-80kg</span>
-                        </div>
-                    </div>
-                    <div class="p-6 rounded-3xl bg-slate-50 border relative flex flex-col justify-between h-32 group hover:bg-indigo-50">
-                        <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase mb-2">體脂率</p>
-                            <p class="text-3xl font-black text-blue-600">21</p>
-                        </div>
-                        <div class="flex justify-between items-baseline border-t border-slate-200 pt-3 mt-auto">
-                            <span class="text-xl font-black text-blue-600">正常</span>
-                            <span class="text-xs text-slate-400 font-bold">20</span>
-                        </div>
-                    </div>
-                    <!-- More cards... -->
-                </div>
-            </div>
+ // SMI
+ const smiLimit = gender === "男" ? 7.0 : 5.7;
+ const smiEval = smi < smiLimit ? { text: "低於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-            <!-- Performance Charts -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-                <div class="bg-slate-50 p-8 rounded-3xl border">
-                    <p class="text-xs font-bold text-slate-500 mb-4">1. 體脂率 & 骨骼肌量</p>
-                    <div class="h-64 chart-placeholder">📊 趨勢圖表</div>
-                </div>
-                <div class="bg-slate-50 p-8 rounded-3xl border">
-                    <p class="text-xs font-bold text-slate-500 mb-4">2. 6MWD</p>
-                    <div class="h-64 chart-placeholder">📈 趨勢圖表</div>
-                </div>
-            </div>
-        </div>
-    </div>
+ // 內脂
+ const vfEval = d.visceralFat >= 10 ? { text: "高於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-    <!-- Entry View -->
-    <div id="entry" class="view hidden max-w-3xl mx-auto space-y-6">
-        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-12 rounded-3xl shadow-2xl text-center">
-            <h2 class="text-4xl font-black mb-4">➕ Google Sheets 快速輸入</h2>
-            <p class="opacity-90 text-xl">將評估資料快速存入系統</p>
-        </div>
+ // 腰臀比
+ const whrStd = gender === "男" ? 0.92 : 0.88;
+ const whrEval = whr > whrStd ? { text: "高於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-        <!-- Basic Info -->
-        <div class="bg-white p-8 rounded-3xl shadow-lg border">
-            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
-                📋 1. 基本資料
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label class="block text-sm font-bold text-slate-500 mb-2">床號</label>
-                    <input type="text" id="bed" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg" placeholder="A01">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold text-slate-500 mb-2">姓名</label>
-                    <input type="text" id="name" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg" placeholder="王大明">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold text-slate-500 mb-2">生日</label>
-                    <input type="date" id="birthday" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold text-slate-500 mb-2">性別</label>
-                    <select id="gender" class="w-full p-4 border border-slate-200 rounded-2xl focus:ring-4 ring-indigo-100 focus:border-indigo-500 text-lg">
-                        <option>請選擇</option>
-                        <option>男</option>
-                        <option>女</option>
-                    </select>
-                </div>
-            </div>
-        </div>
+ // 30秒坐站
+ const sitStandStd = gender === "男" ? (age >= 60 ? 18 : 24) : (age >= 60 ? 15 : 22);
+ const sitStandEval = d.sitStand < sitStandStd ? { text: "低於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-        <!-- Body Composition -->
-        <div class="bg-white p-8 rounded-3xl shadow-lg border">
-            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
-                💪 2. 身體組成 Key-in
-            </h3>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-                <div><label class="block text-xs text-slate-500 mb-1">身高 cm</label><input type="number" id="height" class="w-full p-4 border rounded-2xl text-lg" placeholder="175"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">體重 kg</label><input type="number" id="weight" class="w-full p-4 border rounded-2xl text-lg" placeholder="75"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">體脂率 %</label><input type="number" id="bodyFat" class="w-full p-4 border rounded-2xl text-lg" placeholder="21"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">骨骼肌量 %</label><input type="number" id="sMM" class="w-full p-4 border rounded-2xl text-lg" placeholder="33"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">內臟脂肪</label><input type="number" id="visceralFat" class="w-full p-4 border rounded-2xl text-lg" placeholder="9"></div>
-            </div>
-        </div>
+ // 六分鐘行走
+ const walkPredict = gender === "女" ? (2.11 * d.height - 2.29 * d.weight - 5.78 * age + 667) : (7.57 * d.height - 1.76 * d.weight - 5.02 * age - 309);
+ const walkMin = Math.round(gender === "女" ? walkPredict - 139 : walkPredict - 153);
+ const walkEval = d.walk6m < walkMin ? { text: "低於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-        <!-- Performance Tests -->
-        <div class="bg-white p-8 rounded-3xl shadow-lg border">
-            <h3 class="text-2xl font-bold text-slate-700 mb-8 flex items-center gap-3 border-b pb-6">
-                🏃 3. 功能測驗 Key-in
-            </h3>
-            <div class="grid grid-cols-2 gap-6">
-                <div><label class="block text-xs text-slate-500 mb-1">仰臥起坐</label><input type="number" id="situps" class="w-full p-4 border rounded-2xl text-lg" placeholder="18"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">6MWD m</label><input type="number" id="walk6m" class="w-full p-4 border rounded-2xl text-lg" placeholder="450"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">坐站30秒</label><input type="number" id="sitStand" class="w-full p-4 border rounded-2xl text-lg" placeholder="18"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">坐姿前屈 cm</label><input type="number" id="sitReach" class="w-full p-4 border rounded-2xl text-lg" placeholder="12"></div>
-            </div>
-        </div>
+ // 仰臥起坐與柔軟度 (常模評語等級)
+ const situpsEval = getSitupsLevel(d.situps, gender, age);
+ const reachStd = gender === "男" ? 10 : 15;
+ let reachEval = { text: "適當", color: "text-blue-600" };
+ if (d.sitReach >= (reachStd + 10)) reachEval = { text: "很好", color: "text-blue-600" };
+ else if (d.sitReach >= (reachStd + 5)) reachEval = { text: "良好", color: "text-blue-600" };
+ else if (d.sitReach < (reachStd - 5)) reachEval = { text: "不好", color: "text-red-600" };
+ else if (d.sitReach < reachStd) reachEval = { text: "稍差", color: "text-red-600" };
 
-        <button onclick="generateCSV()" 
-                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8 rounded-3xl font-black text-2xl shadow-2xl hover:scale-105 transition-all duration-300">
-            📤 產生CSV 匯入Google Sheets
-        </button>
-    </div>
+ // 體年齡差距
+ const ageDiff = d.bodyAge - age;
+ const ageDiffStr = ageDiff > 0 ? `+${ageDiff}` : `${ageDiff}`;
+ const ageColor = ageDiff > 0 ? "text-red-600" : "text-blue-600";
+ const ageEval = ageDiff > 0 ? { text: "高於標準", color: "text-red-600" } : { text: "標準", color: "text-blue-600" };
 
-    <script>
-        function showView(viewName) {
-            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
-            document.getElementById(viewName).classList.remove('hidden');
-        }
+ return {
+   bmi, bmiMin, bmiMax, bmiEval,
+   fatLimit, fatEval,
+   smmMin, smmEval,
+   smi, smiLimit, smiEval,
+   vfEval,
+   whr, whrStd, whrEval,
+   sitStandStd, sitStandEval,
+   walkMin, walkEval,
+   situpsEval,
+   reachStd, reachEval,
+   sMM_weight, ageDiffStr, ageColor, ageEval
+ };
+};
 
-        function generateCSV() {
-            const data = {
-                id: document.getElementById('bed').value.slice(0,3) || '001',
-                bed: document.getElementById('bed').value || '',
-                name: document.getElementById('name').value || '',
-                gender: document.getElementById('gender').value || '',
-                birthday: document.getElementById('birthday').value || '',
-                date: new Date().toISOString().split('T')[0],
-                weight: document.getElementById('weight').value || '',
-                height: document.getElementById('height').value || '',
-                bodyFat: document.getElementById('bodyFat').value || '',
-                sMM: document.getElementById('sMM').value || '',
-                visceralFat: document.getElementById('visceralFat').value || '',
-                sitStand: document.getElementById('sitStand').value || '',
-                walk6m: document.getElementById('walk6m').value || '',
-                sitReach: document.getElementById('sitReach').value || '',
-                situps: document.getElementById('situps').value || '',
-                waist: '88',
-                hip: '90',
-                bmr: '1720',
-                bodyAge: '38'
-            };
-            
-            const csv = Object.values(data).join(',');
-            navigator.clipboard.writeText(csv).then(() => {
-                alert('✅ CSV資料已複製到剪貼簿！\n請貼到Google Sheets第2列');
-                showView('dashboard');
-            });
-        }
+const App = () => {
+ const [view, setView] = useState('dashboard');
+ const [selectedUserId, setSelectedUserId] = useState('');
+ const [selectedDates, setSelectedDates] = useState([]);
+ const [bodyMetric, setBodyMetric] = useState('weight');
+ const [performanceMetric, setPerformanceMetric] = useState('walk6m');
 
-        // Initialize
-        showView('dashboard');
-    </script>
-</body>
-</html>
+ const [members, setMembers] = useState([
+   { id: "001", bed: "A01", name: "王大明", gender: "男", birthday: "1985-05-20", data: [
+     { date: "2023-01-15", weight: 82, height: 175, bodyFat: 28, sMM: 29, visceralFat: 13, sitStand: 10, walk6m: 320, sitReach: 2, situps: 5, waist: 98, hip: 90, bmr: 1650, bodyAge: 45 },
+     { date: "2024-06-10", weight: 75, height: 175, bodyFat: 21, sMM: 33, visceralFat: 9, sitStand: 18, walk6m: 450, sitReach: 12, situps: 18, waist: 88, hip: 90, bmr: 1720, bodyAge: 38 }
+   ]},
+   { id: "002", bed: "B03", name: "李小華", gender: "女", birthday: "1990-11-10", data: [
+     { date: "2024-06-12", weight: 63, height: 160, bodyFat: 30, sMM: 25, visceralFat: 7, sitStand: 13, walk6m: 340, sitReach: 18, situps: 12, waist: 82, hip: 95, bmr: 1350, bodyAge: 35 }
+   ]}
+ ]);
+
+ const allDates = useMemo(() => {
+   const dates = new Set();
+   members.forEach(m => m.data.forEach(d => dates.add(d.date)));
+   return Array.from(dates).sort();
+ }, [members]);
+
+ const sortedMembers = useMemo(() => [...members].sort((a, b) => a.id.localeCompare(b.id)), [members]);
+ const selectedUser = useMemo(() => members.find(m => m.id === selectedUserId), [members, selectedUserId]);
+ const evalResults = useMemo(() => selectedUser ? getDetailedEvaluation(selectedUser, selectedUser.gender, calculateAge(selectedUser.birthday)) : null, [selectedUser]);
+
+ // 族群統計連動日期篩選
+ const filteredStats = useMemo(() => {
+   let targetEntries = [];
+   let memberIdsInFilter = new Set();
+   let ages = [];
+   let maleCount = 0;
+   let femaleCount = 0;
+
+   members.forEach(m => {
+     const age = calculateAge(m.birthday);
+     let mHasDataInDate = false;
+     m.data.forEach(d => {
+       if (selectedDates.length === 0 || selectedDates.includes(d.date)) {
+         const res = getDetailedEvaluation({ data: [d] }, m.gender, age);
+         targetEntries.push({ ...d, res, gender: m.gender });
+         mHasDataInDate = true;
+       }
+     });
+     if (mHasDataInDate) {
+       memberIdsInFilter.add(m.id);
+       ages.push(age);
+       if (m.gender === '男') maleCount++; else femaleCount++;
+     }
+   });
+
+   const total = targetEntries.length;
+   const bmiAlert = targetEntries.filter(d => parseFloat(d.res.bmi) >= 27).length;
+   const vfAlert = targetEntries.filter(d => d.visceralFat >= 10).length;
+   const smmAlert = targetEntries.filter(d => d.sMM < 30).length;
+   const smiAlert = targetEntries.filter(d => d.res.smi < d.res.smiLimit).length;
+   const avgAge = ages.length > 0 ? (ages.reduce((a,b)=>a+b,0)/ages.length).toFixed(1) : 0;
+  
+   return {
+     total, bmiAlert, vfAlert, smmAlert, smiAlert,
+     maleCount, femaleCount, avgAge, memberTotal: memberIdsInFilter.size
+   };
+ }, [members, selectedDates]);
+
+ const handleAddEntry = () => {
+   const existing = members.find(m => m.bed === newEntry.bed && m.name === newEntry.name);
+   if (existing) {
+     const updated = members.map(m => m.id === existing.id ? { ...m, data: [...m.data, { ...newEntry }] } : m);
+     setMembers(updated);
+   } else {
+     const newId = String(members.length + 1).padStart(3, '0');
+     setMembers([...members, { id: newId, ...newEntry, data: [{ ...newEntry }] }]);
+   }
+   alert("評估資料已錄入！");
+ };
+
+ const [newEntry, setNewEntry] = useState({
+   date: new Date().toISOString().split('T')[0],
+   bed: '', name: '', birthday: '', gender: '男',
+   height: '', weight: '', bodyFat: '', sMM: '', bmr: '', bodyAge: '', visceralFat: '', waist: '', hip: '',
+   situps: '', walk6m: '', sitStand: '', sitReach: ''
+ });
+
+ return (
+   <div className="min-h-screen bg-slate-50 p-4 md:p-8">
+     <header className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 gap-4">
+       <div>
+         <h1 className="text-2xl font-bold text-indigo-900 flex items-center gap-2">
+           <Activity className="text-indigo-600" /> 職能治療運動評估管理系統
+         </h1>
+         <p className="text-slate-500 text-sm italic">OT Supervisor Management Console</p>
+       </div>
+       <nav className="flex bg-slate-100 p-1 rounded-xl">
+         <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-lg text-sm transition ${view === 'dashboard' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>族群分析</button>
+         <button onClick={() => setView('individual')} className={`px-4 py-2 rounded-lg text-sm transition ${view === 'individual' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>個人報告</button>
+         <button onClick={() => setView('entry')} className={`px-4 py-2 rounded-lg text-sm transition ${view === 'entry' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>資料錄入</button>
+       </nav>
+     </header>
+
+     {view === 'dashboard' && (
+       <div className="space-y-6">
+         {/* 篩選器（原版） */}
+         <div className="bg-white p-4 rounded-xl shadow-sm border flex items-center gap-4">
+           <span className="text-sm font-bold text-slate-500 flex items-center gap-1"><Calendar size={16}/> 評估日期篩選:</span>
+           <div className="flex flex-wrap gap-2">
+             {allDates.map(date => (
+               <button
+                 key={date}
+                 onClick={() => setSelectedDates(prev => prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date])}
+                 className={`px-3 py-1 rounded-full text-xs transition ${selectedDates.includes(date) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+               >
+                 {date}
+               </button>
+             ))}
+           </div>
+         </div>
+
+         {/* 根據日期篩選連動的卡片（新增卡片位置在篩選下方） */}
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+             <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600"><Users size={24}/></div>
+             <div>
+               <p className="text-xs font-bold text-slate-400">總評估人數</p>
+               <h3 className="text-xl font-black text-slate-700">{filteredStats.memberTotal} 人</h3>
+             </div>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+             <div className="bg-blue-100 p-3 rounded-xl text-blue-600"><User size={24}/></div>
+             <div>
+               <p className="text-xs font-bold text-slate-400">男女比例 (男/女)</p>
+               <h3 className="text-xl font-black text-slate-700">{filteredStats.maleCount} / {filteredStats.femaleCount}</h3>
+             </div>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+             <div className="bg-emerald-100 p-3 rounded-xl text-emerald-600"><Calendar size={24}/></div>
+             <div>
+               <p className="text-xs font-bold text-slate-400">平均年齡</p>
+               <h3 className="text-xl font-black text-slate-700">{filteredStats.avgAge} 歲</h3>
+             </div>
+           </div>
+         </div>
+
+         {/* 警示統計（連動日期） */}
+         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+           <div className="bg-white p-6 rounded-2xl border-l-4 border-indigo-500 shadow-sm text-center">
+             <p className="text-slate-500 text-xs font-bold">肥胖警示 (BMI ≥ 27)</p>
+             <h3 className="text-2xl font-black mt-1 text-indigo-900">{filteredStats.bmiAlert} / {filteredStats.total}</h3>
+           </div>
+           <div className="bg-white p-6 rounded-2xl border-l-4 border-red-500 shadow-sm text-center">
+             <p className="text-slate-500 text-xs font-bold">內脂警示 (VF ≥ 10)</p>
+             <h3 className="text-2xl font-black mt-1 text-red-600">{filteredStats.vfAlert} / {filteredStats.total}</h3>
+           </div>
+           <div className="bg-white p-6 rounded-2xl border-l-4 border-amber-500 shadow-sm text-center">
+             <p className="text-slate-500 text-xs font-bold">骨骼肌率低警示</p>
+             <h3 className="text-2xl font-black mt-1 text-amber-600">{filteredStats.smmAlert} / {filteredStats.total}</h3>
+           </div>
+           <div className="bg-white p-6 rounded-2xl border-l-4 border-rose-500 shadow-sm text-center">
+             <p className="text-slate-500 text-xs font-bold">肌少風險 (SMI 警示)</p>
+             <h3 className="text-2xl font-black mt-1 text-rose-600">{filteredStats.smiAlert} / {filteredStats.total}</h3>
+           </div>
+         </div>
+
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           <div className="bg-white p-6 rounded-2xl shadow-sm border">
+             <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><Database size={18}/> 身體素質平均趨勢</h3>
+             <select value={bodyMetric} onChange={(e) => setBodyMetric(e.target.value)} className="mb-4 w-full p-2 bg-slate-50 rounded-lg text-sm border-none focus:ring-2 ring-indigo-500">
+               <option value="weight">體重 (kg)</option><option value="bodyFat">體脂率 (%)</option><option value="sMM">骨骼肌率 (%)</option><option value="visceralFat">內臟脂肪</option><option value="bmi">BMI</option>
+             </select>
+             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={[{d:'期初',v:75},{d:'期中',v:74},{d:'期末',v:72}]}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="d" /><YAxis /><Tooltip /><Line type="monotone" dataKey="v" name="平均值" stroke="#6366f1" strokeWidth={3} /></LineChart></ResponsiveContainer></div>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border">
+             <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><Activity size={18}/> 動作表現平均趨勢</h3>
+             <select value={performanceMetric} onChange={(e) => setPerformanceMetric(e.target.value)} className="mb-4 w-full p-2 bg-slate-50 rounded-lg text-sm border-none focus:ring-2 ring-emerald-500">
+               <option value="walk6m">六分鐘行走</option><option value="situps">一分鐘仰臥起坐</option><option value="sitReach">柔軟度</option><option value="sitStand">30秒坐站測驗</option>
+             </select>
+             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={[{d:'期初',v:320},{d:'期中',v:345},{d:'期末',v:370}]}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="d" /><YAxis /><Tooltip /><Line type="monotone" dataKey="v" name="平均值" stroke="#10b981" strokeWidth={3} /></LineChart></ResponsiveContainer></div>
+           </div>
+         </div>
+       </div>
+     )}
+
+     {view === 'individual' && (
+       <div className="space-y-6">
+         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+           <span className="text-slate-500 font-bold text-sm">個案選擇:</span>
+           <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)} className="flex-1 p-2 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 ring-indigo-500">
+             <option value="">-- 請選擇個案 --</option>
+             {sortedMembers.map(m => <option key={m.id} value={m.id}>{m.id} - {m.name} (床號: {m.bed})</option>)}
+           </select>
+         </div>
+
+         {selectedUser && evalResults && (
+           <div id="report-content" className="space-y-8">
+             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 min-h-[1050px]">
+               <div className="flex justify-between items-start mb-6">
+                 <div>
+                   <h2 className="text-3xl font-bold text-slate-800">
+                     {selectedUser.name}
+                     <span className="text-lg font-normal text-slate-400 ml-4">{calculateAge(selectedUser.birthday)}歲 | {selectedUser.gender} | 評估日期: {selectedUser.data[selectedUser.data.length-1].date}</span>
+                   </h2>
+                 </div>
+                 <button onClick={() => window.print()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2"><Download size={16}/> 導出 PDF</button>
+               </div>
+
+               <div className="mb-8">
+                 <h4 className="font-bold text-sm text-indigo-600 mb-4 flex items-center gap-2 border-b pb-2"><User size={16}/> (1) 身體素質評估</h4>
+                 <div className="grid grid-cols-5 gap-3">
+                   {[
+                     { l: "BMI", v: evalResults.bmi, s: evalResults.bmiEval.text, h: `標準：18.5-24`, c: evalResults.bmiEval.color },
+                     { l: "當次評估體重", v: `${selectedUser.data[selectedUser.data.length-1].weight}kg`, s: "標準", h: `標準：${evalResults.bmiMin}-${evalResults.bmiMax}kg`, c: "text-blue-600" },
+                     { l: "體脂肪", v: `${selectedUser.data[selectedUser.data.length-1].bodyFat}%`, s: evalResults.fatEval.text, h: `標準：< ${evalResults.fatLimit}%`, c: evalResults.fatEval.color },
+                     { l: "骨骼肌率", v: `${selectedUser.data[selectedUser.data.length-1].sMM}%`, s: evalResults.smmEval.text, h: `標準：> ${evalResults.smmMin}%`, c: evalResults.smmEval.color },
+                     { l: "骨骼肌重量", v: `${evalResults.sMM_weight}kg`, s: "標準", h: "體重 * 骨骼肌%", c: "text-blue-600" },
+                     { l: "SMI 索引", v: evalResults.smi, s: evalResults.smiEval.text, h: `標準：> ${evalResults.smiLimit}`, c: evalResults.smiEval.color },
+                     { l: "內臟脂肪", v: selectedUser.data[selectedUser.data.length-1].visceralFat, s: evalResults.vfEval.text, h: "標準：1-9", c: evalResults.vfEval.color },
+                     { l: "腰臀比", v: evalResults.whr, s: evalResults.whrEval.text, h: `標準：< ${evalResults.whrStd}`, c: evalResults.whrEval.color },
+                     { l: "體年齡對比", v: evalResults.ageDiffStr, s: evalResults.ageEval.text, h: "體脂/代衡量", c: evalResults.ageColor },
+                     { l: "基礎代謝", v: selectedUser.data[selectedUser.data.length-1].bmr, s: "標準", h: "kcal/日", c: "text-blue-600" }
+                   ].map((item, i) => (
+                     <div key={i} className="p-3 rounded-xl border bg-slate-50 border-slate-100 relative flex flex-col justify-between h-24">
+                       <div>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">{item.l}</p>
+                         <p className="text-xl font-black text-indigo-900 leading-tight">{item.v}</p>
+                       </div>
+                       <div className="flex justify-between items-baseline mt-auto border-t border-slate-200 pt-1">
+                         <span className={`text-xl font-black ${item.c}`}>{item.s}</span>
+                         <span className="text-[9px] text-slate-400 font-bold text-right">{item.h}</span>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-8 items-start">
+                 <div className="space-y-4">
+                   <h4 className="font-bold text-sm text-slate-600 flex items-center gap-2"><PieChart size={16}/> 體能PR雷達圖</h4>
+                   <div className="h-80 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col items-center justify-center p-4">
+                     <ResponsiveContainer width="100%" height="80%">
+                       <RadarChart data={[{subject:'BMI',v:80},{subject:'骨骼肌',v:70},{subject:'坐站',v:60},{subject:'行走',v:90},{subject:'仰臥',v:50},{subject:'柔軟度',v:40}]}>
+                         <PolarGrid /><PolarAngleAxis dataKey="subject" /><Radar name="PR" dataKey="v" stroke="#6366f1" fill="#6366f1" fillOpacity={0.5} />
+                       </RadarChart>
+                     </ResponsiveContainer>
+                     <div className="text-[11px] text-indigo-700 font-bold mt-2 text-center bg-indigo-50 p-2 rounded-lg border border-indigo-100 leading-relaxed">
+                       整體 PR 面積百分比：<span className="text-lg">65%</span> <br/>
+                       <span className="text-[9px] text-slate-500 font-normal">說明：數值經由全國同齡常模換算為 PR 值（0-100），面積百分比越大代表體能表現越優異。</span>
+                     </div>
+                   </div>
+                 </div>
+
+                 <div className="space-y-4">
+                   <h4 className="font-bold text-sm text-emerald-600 flex items-center gap-2"><Activity size={16}/> (2) 體能表現評估</h4>
+                   <div className="space-y-4">
+                     {[
+                       { l: "核心-一分鐘仰臥起坐", v: `${selectedUser.data[selectedUser.data.length-1].situps}次`, s: evalResults.situpsEval.text, h: `標準：常模等級`, c: evalResults.situpsEval.color },
+                       { l: "心肺-六分鐘行走 (6MWD)", v: `${selectedUser.data[selectedUser.data.length-1].walk6m}m`, s: evalResults.walkEval.text, h: `標準：> ${evalResults.walkMin}m`, c: evalResults.walkEval.color },
+                       { l: "下肢-30秒坐站測驗", v: `${selectedUser.data[selectedUser.data.length-1].sitStand}次`, s: evalResults.sitStandEval.text, h: `標準：>= ${evalResults.sitStandStd}次`, c: evalResults.sitStandEval.color },
+                       { l: "柔軟度-柔軟度測驗", v: `${selectedUser.data[selectedUser.data.length-1].sitReach}cm`, s: evalResults.reachEval.text, h: `標準：常模等級`, c: evalResults.reachEval.color }
+                     ].map((item, i) => (
+                       <div key={i} className="flex justify-between items-center bg-white p-4 rounded-xl border-l-4 border-emerald-500 shadow-sm border border-slate-100 h-24">
+                         <div className="flex flex-col justify-center">
+                           <p className="text-xs text-slate-400 font-bold">{item.l}</p>
+                           <p className="text-xl font-black text-slate-700 leading-tight">{item.v}</p>
+                         </div>
+                         <div className="flex flex-col items-end justify-between h-full py-1">
+                           <p className={`text-xl font-black ${item.c}`}>{item.s}</p>
+                           <p className="text-[10px] text-slate-400 font-bold">{item.h}</p>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             {/* Page 2: 歷年變化追蹤 - 嚴格鎖定不動 */}
+             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 break-before-page">
+               <h3 className="text-xl font-bold mb-8 text-slate-700 italic border-l-4 border-indigo-500 pl-4">Page 2: 歷年變化追蹤與臨床建議</h3>
+               <div className="grid grid-cols-2 gap-6 mb-8">
+                  <div className="h-52 bg-slate-50 p-4 rounded-2xl border">
+                     <p className="text-xs font-bold text-slate-500 mb-2">1. 身體組成趨勢 (體脂率/骨骼肌)</p>
+                     <ResponsiveContainer width="100%" height="100%">
+                       <LineChart data={selectedUser.data}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" hide /><YAxis /><Tooltip /><Line type="monotone" dataKey="bodyFat" name="體脂率" stroke="#f43f5e" strokeWidth={3} /><Line type="monotone" dataKey="sMM" name="骨骼肌" stroke="#10b981" strokeWidth={3} /><Legend iconType="circle" />
+                       </LineChart>
+                     </ResponsiveContainer>
+                  </div>
+                  <div className="h-52 bg-slate-50 p-4 rounded-2xl border">
+                     <p className="text-xs font-bold text-slate-500 mb-2">2. 心肺適能趨勢 (6MWD 行走)</p>
+                     <ResponsiveContainer width="100%" height="100%">
+                       <LineChart data={selectedUser.data}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" hide /><YAxis /><Tooltip /><Line type="monotone" dataKey="walk6m" name="行走距離" stroke="#6366f1" strokeWidth={3} />
+                       </LineChart>
+                     </ResponsiveContainer>
+                  </div>
+                  <div className="h-52 bg-slate-50 p-4 rounded-2xl border">
+                     <p className="text-xs font-bold text-slate-500 mb-2">3. 下肢肌力趨勢 (30秒坐站)</p>
+                     <ResponsiveContainer width="100%" height="100%">
+                       <LineChart data={selectedUser.data}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" hide /><YAxis /><Tooltip /><Line type="monotone" dataKey="sitStand" name="坐站次數" stroke="#f59e0b" strokeWidth={3} />
+                       </LineChart>
+                     </ResponsiveContainer>
+                  </div>
+                  <div className="h-52 bg-slate-50 p-4 rounded-2xl border">
+                     <p className="text-xs font-bold text-slate-500 mb-2">4. 核心肌力趨勢 (仰臥起坐)</p>
+                     <ResponsiveContainer width="100%" height="100%">
+                       <LineChart data={selectedUser.data}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" hide /><YAxis /><Tooltip /><Line type="monotone" dataKey="situps" name="仰臥起坐" stroke="#8b5cf6" strokeWidth={3} />
+                       </LineChart>
+                     </ResponsiveContainer>
+                  </div>
+               </div>
+               <div className="grid grid-cols-2 gap-6">
+                 <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                   <h4 className="font-bold text-indigo-700 flex items-center gap-2 mb-4"><Heart size={18}/> OT 職能運動建議</h4>
+                   <ul className="text-sm text-slate-600 space-y-2 list-disc pl-4 leading-relaxed"><li><strong>肌力強化</strong>：針對坐站與骨骼肌指標，建議每週 3 次阻力訓練。</li><li><strong>心肺訓練</strong>：六分鐘行走低於門檻者，建議增加每週 150 分鐘中強度運動。</li><li><strong>柔軟度</strong>：每日進行背部與腿後肌伸展，避免僵硬。</li></ul>
+                 </div>
+                 <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
+                   <h4 className="font-bold text-emerald-700 flex items-center gap-2 mb-4"><Coffee size={18}/> 臨床營養建議</h4>
+                   <ul className="text-sm text-slate-600 space-y-2 list-disc pl-4 leading-relaxed"><li><strong>蛋白質攝取</strong>：應維持每餐均勻攝取蛋白質。</li><li><strong>體重控制</strong>：離理想區間尚有差距，建議控制總熱量並調整油脂攝取。</li></ul>
+                 </div>
+               </div>
+             </div>
+           </div>
+         )}
+       </div>
+     )}
+
+     {view === 'entry' && (
+       <div className="max-w-4xl mx-auto space-y-6">
+         <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg flex justify-between items-center">
+           <div><h3 className="text-xl font-bold flex items-center gap-2"><PlusCircle /> 新增評估數據</h3></div>
+           <div className="text-right">
+             <label className="block text-[10px] uppercase font-bold opacity-70">評估日期</label>
+             <input type="date" value={newEntry.date} onChange={(e)=>setNewEntry({...newEntry, date: e.target.value})} className="bg-indigo-500 border-none rounded p-1 text-sm text-white" />
+           </div>
+         </div>
+         {/* 資料錄入嚴格鎖定不動 */}
+         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+           <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 border-b pb-2"><Info size={18}/> (1) 基本資料</h4>
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">床號</label><input type="text" value={newEntry.bed} onChange={(e)=>setNewEntry({...newEntry, bed: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">姓名</label><input type="text" value={newEntry.name} onChange={(e)=>setNewEntry({...newEntry, name: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">出生年月日</label><input type="date" value={newEntry.birthday} onChange={(e)=>setNewEntry({...newEntry, birthday: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">性別</label><select value={newEntry.gender} onChange={(e)=>setNewEntry({...newEntry, gender: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50"><option value="男">男</option><option value="女">女</option></select></div>
+           </div>
+         </div>
+         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+           <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 border-b pb-2"><Database size={18}/> (2) 身體素質 (Key-in)</h4>
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+             {[ { l: "身高 (cm)", k: "height" }, { l: "體重 (kg)", k: "weight" }, { l: "體脂肪 (%)", k: "bodyFat" }, { l: "骨骼肌 (%)", k: "sMM" }, { l: "基礎代謝 (kcal)", k: "bmr" }, { l: "體年齡 (歲)", k: "bodyAge" }, { l: "內臟脂肪", k: "visceralFat" }, { l: "腰圍 (cm)", k: "waist" }, { l: "臀圍 (cm)", k: "hip" } ].map(f => (
+               <div key={f.k} className="space-y-1"><label className="text-xs font-bold text-slate-500">{f.l}</label><input type="number" step="0.1" value={newEntry[f.k]} onChange={(e)=>setNewEntry({...newEntry, [f.k]: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             ))}
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">腰臀比 (WHR)</label><input disabled value={(newEntry.waist && newEntry.hip) ? (newEntry.waist/newEntry.hip).toFixed(2) : ""} className="w-full p-2 border rounded-lg bg-slate-200 cursor-not-allowed" /></div>
+           </div>
+         </div>
+         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+           <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 border-b pb-2"><Activity size={18}/> (3) 體能表現 (Key-in)</h4>
+           <div className="grid grid-cols-2 gap-6">
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">一分鐘仰臥起坐 (次)</label><input type="number" value={newEntry.situps} onChange={(e)=>setNewEntry({...newEntry, situps: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">六分鐘行走距離 (m)</label><input type="number" value={newEntry.walk6m} onChange={(e)=>setNewEntry({...newEntry, walk6m: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">30秒坐站次數 (次)</label><input type="number" value={newEntry.sitStand} onChange={(e)=>setNewEntry({...newEntry, sitStand: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+             <div className="space-y-1"><label className="text-xs font-bold text-slate-500">柔軟度 (cm)</label><input type="number" value={newEntry.sitReach} onChange={(e)=>setNewEntry({...newEntry, sitReach: e.target.value})} className="w-full p-2 border rounded-lg bg-slate-50" /></div>
+           </div>
+         </div>
+         <button onClick={handleAddEntry} className="w-full bg-indigo-600 text-white p-4 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition transform active:scale-95">確認並儲存本次評估報告</button>
+       </div>
+     )}
+
+     <style>{`
+       @media print {
+         body * { visibility: hidden; }
+         #report-content, #report-content * { visibility: visible; }
+         #report-content { position: absolute; left: 0; top: 0; width: 100%; }
+         .break-before-page { page-break-before: always; margin-top: 1cm; }
+       }
+     `}</style>
+   </div>
+ );
+};
+
+export default App;
