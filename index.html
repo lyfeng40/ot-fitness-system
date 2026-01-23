@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>職能治療運動追蹤系統 Occupational Therapy Fitness Tracker</title>
+    <title>職能治療運動追蹤系統 (雲端版)</title>
     
-    <!-- 1. 核心樣式與字型 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -23,7 +22,7 @@
 
         /* PDF 專用頁面容器設定 */
         .pdf-page {
-            height: 275mm; /* 固定高度防止溢出 */
+            height: 275mm;
             width: 100%;
             overflow: hidden;
             page-break-after: always;
@@ -57,12 +56,10 @@
         .dropdown:hover .dropdown-content { display: block; }
     </style>
 
-    <!-- 2. React 核心 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- 3. 圖表與工具庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script> 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -174,8 +171,13 @@
 
         // --- 主程式 ---
         const Dashboard = () => {
+            // ★★★ 在這裡填入你的 Google Apps Script 網址 ★★★
+            const API_URL = "https://script.google.com/macros/library/d/144LCGc1nfK9WCCaaFdOQjzYUzwU8rkk_1QQGRw_GIArzvfJ0rHkGQAMT/5"; 
+            const API_PASS = "8888";
+
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
+            const [isLoading, setIsLoading] = useState(false);
             
             const processData = (rawData) => {
                 return rawData.map(row => {
@@ -197,61 +199,63 @@
                 });
             };
 
-            const generateMockData = () => {
-                const names = ["張大明", "李小華", "王志明", "陳淑芬", "林建國"];
-                const mock = [];
-                names.forEach((name, idx) => {
-                    const bed = `${200 + idx}`;
-                    const sex = idx % 2 === 0 ? "男" : "女";
-                    const birthYear = 1960 + idx * 5; 
-                    const dob = `${birthYear}-05-15`;
-                    
-                    for (let i = 1; i <= 4; i++) {
-                        const age = 2024 - birthYear + Math.floor((i-1)/2); 
-                        const h = 160 + (sex==="男"?10:0) + Math.random()*2;
-                        const w = 60 + Math.random()*5 + (i % 2 === 0 ? -1 : 1);
-                        mock.push({
-                            id: `${idx}_${i}`, name, sex, session: i, bed_number: bed,
-                            date: `202${3+Math.floor((i-1)/2)}-${(i-1)%2===0?'03':'09'}-15`,
-                            dob, age,
-                            height: h, weight: w, waist: 80+Math.random()*2, hip: 95+Math.random()*2,
-                            body_fat: 25+Math.random()*3, muscle_percent: 30+Math.random()*2, visceral_fat: 8+Math.random()*3,
-                            body_age: age + 5, bmr: 1350 + Math.random()*100,
-                            sit_stand_30s: 10 + i + Math.floor(Math.random()*2),
-                            walk_6m: 350 + i*15, flexibility: 10 + i, sit_ups_1m: 12 + i
-                        });
+            // 從 Google Sheets 抓取資料
+            const fetchData = async () => {
+                setIsLoading(true);
+                try {
+                    // 如果 URL 還是預設文字，就不執行
+                    if (API_URL.includes("請將你的")) {
+                        console.warn("尚未設定 API URL");
+                        setIsLoading(false);
+                        return;
                     }
-                });
-                return processData(mock);
-            };
 
-            useEffect(() => { setData(generateMockData()); }, []);
-
-            const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    try {
-                        const wb = XLSX.read(evt.target.result, { type: 'binary' });
-                        const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                        const mapped = jsonData.map((row, idx) => ({
-                            id: `import_${idx}`,
-                            name: row['姓名'], bed_number: row['床號'], sex: row['性別']||'男',
-                            session: row['次數'] || 1, date: row['評估日期'], dob: row['出生年月日'],
-                            height: row['身高'], weight: row['體重'], waist: row['腰圍'], hip: row['臀圍'],
-                            body_fat: row['體脂率'], muscle_percent: row['骨骼肌'], visceral_fat: row['內臟脂肪'],
-                            body_age: row['體年齡'], bmr: row['基礎代謝'],
-                            sit_stand_30s: row['30秒坐站'], walk_6m: row['六分鐘行走'],
-                            flexibility: row['柔軟度'], sit_ups_1m: row['仰臥起坐']
+                    const res = await fetch(`${API_URL}?password=${API_PASS}`);
+                    const json = await res.json();
+                    
+                    if (json.status === 'success') {
+                        // 將 GAS 回傳的中文標題資料轉為程式用的英文 key
+                        const sheetData = json.data.map(row => ({
+                            id: row['唯一識別碼'],
+                            bed_number: row['床號'],
+                            name: row['姓名'],
+                            sex: row['性別'],
+                            dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
+                            age: Number(row['年齡']),
+                            session: row['評估次別'],
+                            date: row['評估日期'] ? new Date(row['評估日期']).toISOString().split('T')[0] : "",
+                            height: Number(row['身高(cm)']),
+                            weight: Number(row['體重(kg)']),
+                            bmi: Number(row['BMI']),
+                            body_fat: Number(row['體脂肪(%)']),
+                            muscle_percent: Number(row['骨骼肌(%)']),
+                            visceral_fat: Number(row['內臟脂肪']),
+                            smi: Number(row['SMI']),
+                            bmr: Number(row['基礎代謝(kcal)']),
+                            body_age: Number(row['體年齡']),
+                            waist: Number(row['腰圍(cm)']),
+                            hip: Number(row['臀圍(cm)']),
+                            whr: Number(row['腰臀比']),
+                            sit_ups_1m: Number(row['一分鐘仰臥起坐(次)']),
+                            walk_6m: Number(row['六分鐘行走測驗(m)']),
+                            flexibility: Number(row['柔軟度(cm)']),
+                            sit_stand_30s: Number(row['30秒坐站測驗(次)'])
                         }));
-                        const calculatedData = mapped.map(d => ({ ...d, age: calcAge(d.dob) }));
-                        setData(prev => [...prev, ...processData(calculatedData)]);
-                        alert("匯入成功！");
-                    } catch (err) { alert("匯入失敗"); }
-                };
-                reader.readAsBinaryString(file);
+                        setData(processData(sheetData));
+                    } else {
+                        // 雖然連線成功但密碼錯誤或其他問題，不跳 alert 避免干擾，僅 console
+                        console.error("API Error: " + json.message);
+                    }
+                } catch (err) {
+                    console.error("Fetch Error:", err);
+                } finally {
+                    setIsLoading(false);
+                }
             };
+
+            useEffect(() => { 
+                fetchData(); 
+            }, []);
 
             // --- Page 1: 族群概況 ---
             const PopulationView = () => {
@@ -348,7 +352,7 @@
 
                 const personRecords = data.filter(d => d.name === selName).sort((a,b) => new Date(a.date) - new Date(b.date));
                 const availableDates = personRecords.map(r => r.date);
-                useEffect(() => { if(availableDates.length > 0 && !availableDates.includes(selDate)) setSelDate(availableDates[availableDates.length-1]); }, [selName]);
+                useEffect(() => { if(availableDates.length > 0 && !availableDates.includes(selDate)) setSelDate(availableDates[availableDates.length-1]); }, [selName, data]);
 
                 const current = personRecords.find(r => r.date === selDate) || {};
 
@@ -364,10 +368,10 @@
                 
                 const radarData = { labels: ['BMI', 'SMI', '心肺', '下肢', '柔軟度', '核心'], datasets: [{ label: '分數', data: radarScores, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] };
 
-                const sitStandStd = getStandard('sit_stand', current.sit_stand_30s, current.sex, current.age);
-                const flexStd = getStandard('flexibility', current.flexibility, current.sex, current.age);
-                const sitUpsStd = getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age);
-                const walkStd = current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'};
+                const sitStandStd = current.id ? getStandard('sit_stand', current.sit_stand_30s, current.sex, current.age) : {};
+                const flexStd = current.id ? getStandard('flexibility', current.flexibility, current.sex, current.age) : {};
+                const sitUpsStd = current.id ? getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age) : {};
+                const walkStd = current.id ? (current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'}) : {};
 
                 // OT 綜合評語生成
                 const generateAnalysis = () => {
@@ -384,7 +388,7 @@
 【治療師建議】
 針對上述評估結果，建議您設定短期目標為提升${current.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${current.walk_6m < current.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
                 };
-                const otAnalysis = generateAnalysis();
+                const otAnalysis = current.id ? generateAnalysis() : "";
 
                 const downloadPDF = () => {
                     const el = document.getElementById('report-container');
@@ -416,7 +420,7 @@
                     { label: '6分鐘行走', data: personRecords.map(r=>r.walk_6m), borderColor: '#8b5cf6' }
                 ];
 
-                if(!current.id) return <div className="p-10 text-center">請先匯入資料</div>;
+                if(!current.id) return <div className="p-10 text-center">請先在「資料輸入」頁面建立資料</div>;
 
                 return (
                     <div className="pb-10">
@@ -552,6 +556,7 @@
                     body_fat: '', muscle_percent: '', visceral_fat: '', body_age: '', bmr: '',
                     sit_stand_30s: '', walk_6m: '', flexibility: '', sit_ups_1m: '' 
                 });
+                const [isSubmitting, setIsSubmitting] = useState(false);
 
                 const handleChange = (e) => {
                     const { name, value } = e.target;
@@ -560,31 +565,78 @@
                     setForm(newForm);
                 };
 
-                const handleSubmit = (e) => {
+                const handleSubmit = async (e) => {
                     e.preventDefault();
-                    const newData = {
-                        ...form, id: Date.now(), session: 1,
-                        height: parseFloat(form.height), weight: parseFloat(form.weight),
-                        waist: parseFloat(form.waist), hip: parseFloat(form.hip),
-                        body_fat: parseFloat(form.body_fat), muscle_percent: parseFloat(form.muscle_percent),
-                        visceral_fat: parseFloat(form.visceral_fat), body_age: parseFloat(form.body_age), bmr: parseFloat(form.bmr),
-                        sit_stand_30s: parseFloat(form.sit_stand_30s), walk_6m: parseFloat(form.walk_6m),
-                        flexibility: parseFloat(form.flexibility), sit_ups_1m: parseFloat(form.sit_ups_1m),
-                        age: parseInt(form.age)
+                    if (API_URL.includes("請將你的")) {
+                        alert("請先修改程式碼中的 API_URL 為你的 Google Apps Script 網址！");
+                        return;
+                    }
+                    setIsSubmitting(true);
+
+                    const height = parseFloat(form.height);
+                    const weight = parseFloat(form.weight);
+                    const muscle_percent = parseFloat(form.muscle_percent);
+                    const bmi = calcBMI(height, weight);
+                    const smi = calcSMI(height, weight, muscle_percent);
+                    const muscle_kg = (weight * muscle_percent / 100).toFixed(1);
+                    const whr = (form.waist && form.hip) ? (form.waist / form.hip).toFixed(2) : 0;
+
+                    const payload = {
+                        password: API_PASS,
+                        id: Date.now().toString(),
+                        bed_number: form.bed_number,
+                        name: form.name,
+                        sex: form.sex,
+                        dob: form.dob,
+                        age: form.age,
+                        session: 1, 
+                        date: form.date,
+                        height: height,
+                        weight: weight,
+                        bmi: bmi.toFixed(1),
+                        body_fat: form.body_fat,
+                        muscle_percent: muscle_percent,
+                        muscle_kg: muscle_kg,
+                        smi: smi.toFixed(1),
+                        bmr: form.bmr,
+                        body_age: form.body_age,
+                        visceral_fat: form.visceral_fat,
+                        waist: form.waist,
+                        hip: form.hip,
+                        whr: whr,
+                        sit_ups_1m: form.sit_ups_1m,
+                        walk_6m: form.walk_6m,
+                        flexibility: form.flexibility,
+                        sit_stand_30s: form.sit_stand_30s
                     };
-                    setData(prev => [...prev, ...processData([newData])]);
-                    alert("新增成功");
-                    setForm({ ...form, name: '', bed_number: '' });
+
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: "POST",
+                            headers: { "Content-Type": "text/plain;charset=utf-8" },
+                            body: JSON.stringify(payload)
+                        });
+                        const json = await res.json();
+                        
+                        if (json.status === 'success') {
+                            alert("✅ 資料已成功儲存到 Google Sheets！");
+                            fetchData();
+                            setForm({ ...form, name: '', bed_number: '' });
+                        } else {
+                            alert("❌ 儲存失敗：" + json.message);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert("儲存時發生錯誤 (請確認網路或 API 網址是否正確)");
+                    } finally {
+                        setIsSubmitting(false);
+                    }
                 };
 
                 return (
                     <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-6 border-b pb-4">
-                            <h2 className="text-2xl font-bold text-gray-800">資料輸入 / 匯入</h2>
-                            <label className="cursor-pointer bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow transition">
-                                <i className="fas fa-file-excel mr-2"></i>Excel 批次匯入
-                                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} />
-                            </label>
+                            <h2 className="text-2xl font-bold text-gray-800">資料輸入 (上傳至雲端)</h2>
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="space-y-4">
@@ -621,7 +673,9 @@
                                     <label className="block text-sm">仰臥起坐 (次) <input type="number" name="sit_ups_1m" value={form.sit_ups_1m} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                 </div>
                             </div>
-                            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow">新增一筆資料</button>
+                            <button type="submit" disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow text-white ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                {isSubmitting ? "資料上傳中..." : "新增並上傳資料"}
+                            </button>
                         </form>
                     </div>
                 );
@@ -640,13 +694,20 @@
                         </div>
                     </nav>
                     <main className="container mx-auto mt-8 px-4">
-                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-spinner fa-spin text-4xl mb-4"></i><p>資料初始化中...</p></div> : 
+                        {isLoading ? (
+                            <div className="text-center py-20 text-blue-600">
+                                <i className="fas fa-cloud-download-alt text-4xl mb-4 animate-bounce"></i>
+                                <p className="font-bold">正在從 Google Sheets 雲端下載資料...</p>
+                                {API_URL.includes("請將你的") && <p className="text-red-500 mt-2 font-bold">請記得在程式碼中填入你的 API URL！</p>}
+                            </div>
+                        ) : (
+                            data.length === 0 ? <div className="text-center py-20 text-gray-500">尚無資料，請前往「資料輸入」新增一筆。</div> :
                             currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView />
-                        }
+                        )}
                     </main>
                 </div>
             );
-        };
+        }; 
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<Dashboard />);
