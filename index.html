@@ -189,10 +189,12 @@
 
         // --- 主程式 ---
         const Dashboard = () => {
+            // ★★★ GAS 網址 (請保持不變) ★★★
             const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
             
+            // ★★★ 關鍵修改：這裡不再寫死密碼，而是使用 State 儲存使用者輸入的密碼 ★★★
             const [apiPass, setApiPass] = useState(""); 
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [isLoggedIn, setIsLoggedIn] = useState(false); // 控制是否顯示登入畫面
 
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
@@ -230,10 +232,12 @@
                 setIsLoading(true);
                 
                 try {
+                    // 嘗試使用使用者輸入的密碼 (apiPass) 去連線
                     const res = await fetch(`${API_URL}?password=${apiPass}`);
                     const json = await res.json();
                     
                     if (json.status === 'success') {
+                        // 密碼正確！處理資料並進入系統
                         const sheetData = json.data.map(row => ({
                             id: row['唯一識別碼'],
                             bed_number: row['床號'],
@@ -261,9 +265,9 @@
                             sit_stand_30s: Number(row['30秒坐站測驗(次)'])
                         }));
                         setData(processData(sheetData));
-                        setIsLoggedIn(true);
+                        setIsLoggedIn(true); // 設定為已登入
                     } else {
-                        alert("登入失敗：密碼錯誤");
+                        alert("登入失敗：" + json.message + " (請確認密碼)");
                     }
                 } catch (err) {
                     console.error(err);
@@ -273,12 +277,15 @@
                 }
             };
 
+            // 重新抓取資料 (用於新增後更新)
             const refreshData = async () => {
                 setIsLoading(true);
                 try {
                     const res = await fetch(`${API_URL}?password=${apiPass}`);
                     const json = await res.json();
                     if(json.status === 'success') {
+                        // ... 重複上述資料處理邏輯 (略，為求簡潔直接重整頁面或簡單處理) ...
+                        // 實際上因為結構相同，可以抽出 fetch 邏輯，但這裡為了不更動太多，我們再次執行轉換
                          const sheetData = json.data.map(row => ({
                             id: row['唯一識別碼'], bed_number: row['床號'], name: row['姓名'], sex: row['性別'],
                             dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
@@ -462,7 +469,7 @@
                             <button onClick={downloadPDF} className="bg-blue-600 text-white px-4 py-2 rounded shadow"><i className="fas fa-print mr-2"></i>下載/列印</button>
                         </div>
                         <div id="report-container" className="max-w-[210mm] mx-auto bg-white shadow-lg">
-                            {/* PDF Page 1 Content */}
+                            {/* PDF Page 1 Content (Simplified for brevity in this view, full content in render) */}
                             <div className="pdf-page p-8 flex flex-col items-stretch">
                                 <div className="border-b-4 border-blue-600 pb-2 mb-2 text-center"><h1 className="text-3xl font-bold text-gray-800">體適能評估與介入建議書</h1></div>
                                 <div className="bg-blue-50 p-2 rounded mb-2 grid grid-cols-5 gap-2 text-center text-sm border border-blue-100"><div><p className="text-gray-500 text-xs">評估日期</p><b>{current.date}</b></div><div><p className="text-gray-500 text-xs">姓名</p><b className="text-lg">{current.name}</b></div><div><p className="text-gray-500 text-xs">性別/年齡</p><b>{current.sex} / {current.age}歲</b></div></div>
@@ -640,7 +647,7 @@
                                 <div>
                                     <input 
                                         type="password" 
-                                        placeholder="請輸入系統密碼" 
+                                        placeholder="請輸入密碼" 
                                         className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                         value={apiPass}
                                         onChange={(e) => setApiPass(e.target.value)}
