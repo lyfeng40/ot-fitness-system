@@ -192,9 +192,9 @@
             // ★★★ GAS 網址 (請保持不變) ★★★
             const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
             
-            // ★★★ 關鍵修改：使用 State 儲存使用者輸入的密碼，預設為空 ★★★
+            // ★★★ 狀態設定：apiPass 空白，isLoggedIn 為 false ★★★
             const [apiPass, setApiPass] = useState(""); 
-            const [isLoggedIn, setIsLoggedIn] = useState(false); // 控制是否顯示登入畫面
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
 
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
