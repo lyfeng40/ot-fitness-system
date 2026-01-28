@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>職能治療運動追蹤系統 (安全登入版)</title>
+    <title>職能治療運動追蹤系統 (雲端連線版)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -22,7 +22,7 @@
 
         /* PDF 專用頁面容器設定 */
         .pdf-page {
-            height: 275mm;
+            height: 275mm; /* 固定高度防止溢出 */
             width: 100%;
             overflow: hidden;
             page-break-after: always;
@@ -192,7 +192,7 @@
             // ★★★ GAS 網址 (請保持不變) ★★★
             const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
             
-            // ★★★ 關鍵修改：這裡不再寫死密碼，而是使用 State 儲存使用者輸入的密碼 ★★★
+            // ★★★ 關鍵修改：使用 State 儲存使用者輸入的密碼，預設為空 ★★★
             const [apiPass, setApiPass] = useState(""); 
             const [isLoggedIn, setIsLoggedIn] = useState(false); // 控制是否顯示登入畫面
 
@@ -267,7 +267,7 @@
                         setData(processData(sheetData));
                         setIsLoggedIn(true); // 設定為已登入
                     } else {
-                        alert("登入失敗：" + json.message + " (請確認密碼)");
+                        alert("登入失敗");
                     }
                 } catch (err) {
                     console.error(err);
@@ -284,8 +284,6 @@
                     const res = await fetch(`${API_URL}?password=${apiPass}`);
                     const json = await res.json();
                     if(json.status === 'success') {
-                        // ... 重複上述資料處理邏輯 (略，為求簡潔直接重整頁面或簡單處理) ...
-                        // 實際上因為結構相同，可以抽出 fetch 邏輯，但這裡為了不更動太多，我們再次執行轉換
                          const sheetData = json.data.map(row => ({
                             id: row['唯一識別碼'], bed_number: row['床號'], name: row['姓名'], sex: row['性別'],
                             dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
