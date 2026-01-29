@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>職能治療運動追蹤系統 (雲端連線版)</title>
     
-    <link href="https://unpkg.com/tailwindcss@3.4.1/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
@@ -54,15 +54,6 @@
         /* 下拉選單 */
         .dropdown-content { display: none; position: absolute; background-color: white; min-width: 200px; box-shadow: 0px 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; border-radius: 0.5rem; z-index: 20; max-height: 250px; overflow-y: auto; }
         .dropdown:hover .dropdown-content { display: block; }
-        
-        /* 登入頁面動畫 */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .login-container {
-            animation: fadeIn 0.5s ease-out;
-        }
     </style>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -227,116 +218,15 @@
             return Math.min(Math.max(score, 10), 120);
         };
 
-        // --- 登入頁面元件 ---
-        const LoginPage = ({ onLogin }) => {
-            const [password, setPassword] = useState('');
-            const [error, setError] = useState('');
-            const [isLoading, setIsLoading] = useState(false);
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError('');
-                setIsLoading(true);
-
-                // 驗證密碼（透過 API 測試）
-                const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
-                
-                try {
-                    const res = await fetch(`${API_URL}?password=${password}`);
-                    const json = await res.json();
-                    
-                    if (json.status === 'success') {
-                        // 密碼正確，儲存到 sessionStorage 並登入
-                        sessionStorage.setItem('apiPassword', password);
-                        onLogin(password);
-                    } else {
-                        setError('密碼錯誤，請重新輸入');
-                        setPassword('');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    setError('無法連線到伺服器，請檢查網路連線');
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-
-            return (
-                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600">
-                    <div className="login-container bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-                        <div className="text-center mb-8">
-                            <div className="inline-block p-4 bg-blue-100 rounded-full mb-4">
-                                <i className="fas fa-heartbeat text-5xl text-blue-600"></i>
-                            </div>
-                            <h1 className="text-3xl font-bold text-gray-800 mb-2">職能治療運動追蹤系統</h1>
-                            <p className="text-gray-500">請輸入系統密碼以繼續</p>
-                        </div>
-
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    <i className="fas fa-lock mr-2"></i>系統密碼
-                                </label>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                                    placeholder="請輸入密碼"
-                                    required
-                                    autoFocus
-                                />
-                            </div>
-
-                            {error && (
-                                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center">
-                                    <i className="fas fa-exclamation-circle mr-2"></i>
-                                    <span className="text-sm">{error}</span>
-                                </div>
-                            )}
-
-                            <button
-                                type="submit"
-                                disabled={isLoading}
-                                className={`w-full py-3 rounded-lg font-bold text-white transition-all ${
-                                    isLoading 
-                                    ? 'bg-gray-400 cursor-not-allowed' 
-                                    : 'bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl'
-                                }`}
-                            >
-                                {isLoading ? (
-                                    <span><i className="fas fa-spinner fa-spin mr-2"></i>驗證中...</span>
-                                ) : (
-                                    <span><i className="fas fa-sign-in-alt mr-2"></i>登入系統</span>
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="mt-6 text-center text-sm text-gray-500">
-                            <i className="fas fa-shield-alt mr-1"></i>
-                            系統已加密保護
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
         // --- 主程式 ---
         const Dashboard = () => {
+            // ★★★ 關鍵修改處：已填入你的 GAS 網址 ★★★
             const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
-            
-            // ★★★ 關鍵修改：密碼改為狀態管理，初始值為 null ★★★
-            const [apiPassword, setApiPassword] = useState(null);
-            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const API_PASS = "8888";
 
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
             const [isLoading, setIsLoading] = useState(false);
-
-            // 清除任何舊的登入資訊，強制重新登入
-            useEffect(() => {
-                sessionStorage.removeItem('apiPassword');
-            }, []);
             
             const processData = (rawData) => {
                 return rawData.map(row => {
@@ -368,10 +258,11 @@
             const fetchData = async () => {
                 setIsLoading(true);
                 try {
-                    const res = await fetch(`${API_URL}?password=${apiPassword}`);
+                    const res = await fetch(`${API_URL}?password=${API_PASS}`);
                     const json = await res.json();
                     
                     if (json.status === 'success') {
+                        // 將 GAS 回傳的資料對應回前端欄位
                         const sheetData = json.data.map(row => ({
                             id: row['唯一識別碼'],
                             bed_number: row['床號'],
@@ -412,29 +303,8 @@
             };
 
             useEffect(() => { 
-                if (isAuthenticated && apiPassword) {
-                    fetchData(); 
-                }
-            }, [isAuthenticated, apiPassword]);
-
-            // ★★★ 登入成功的處理函數 ★★★
-            const handleLogin = (password) => {
-                setApiPassword(password);
-                setIsAuthenticated(true);
-            };
-
-            // ★★★ 登出功能 ★★★
-            const handleLogout = () => {
-                sessionStorage.removeItem('apiPassword');
-                setApiPassword(null);
-                setIsAuthenticated(false);
-                setData([]);
-            };
-
-            // ★★★ 如果未登入，顯示登入頁面 ★★★
-            if (!isAuthenticated) {
-                return <LoginPage onLogin={handleLogin} />;
-            }
+                fetchData(); 
+            }, []);
 
             // --- Page 1: 族群概況 ---
             const PopulationView = () => {
@@ -710,19 +580,19 @@
                                                         <span className="text-[10px] bg-green-100 px-1 rounded">頻率: 每週3次</span>
                                                     </strong>
                                                     <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
-                                                        {current.sarcopenia_status === '肌少症' && <li><strong>阻力:</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li>}
-                                                        {current.walk_6m < current.predicted_walk_6m && <li><strong>有氧:</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
-                                                        {current.flexibility < 20 && <li><strong>伸展:</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
-                                                        {!['肌少症'].includes(current.sarcopenia_status) && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持:</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
-                                                        <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意:</strong>運動時若感頭暈心悸請立即停止並休息。</li>
+                                                        {current.sarcopenia_status === '肌少症' && <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li>}
+                                                        {current.walk_6m < current.predicted_walk_6m && <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
+                                                        {current.flexibility < 20 && <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
+                                                        {!['肌少症'].includes(current.sarcopenia_status) && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
+                                                        <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
                                                     </ul>
                                                 </div>
                                                 <div className="bg-white p-1.5 rounded border border-red-200">
                                                     <strong className="text-red-700 flex items-center mb-1 text-sm"><i className="fas fa-utensils mr-1"></i>營養建議</strong>
                                                     <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
-                                                        {current.bmi > 24 && <li><strong>控糖:</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
-                                                        {(current.smi < 7) ? <li><strong>增肌:</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡:</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
-                                                        <li><strong>骨骼:</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
+                                                        {current.bmi > 24 && <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
+                                                        {(current.smi < 7) ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
+                                                        <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -780,7 +650,7 @@
                     const whr = (form.waist && form.hip) ? (form.waist / form.hip).toFixed(2) : 0;
 
                     const payload = {
-                        password: apiPassword,
+                        password: API_PASS,
                         id: Date.now().toString(),
                         bed_number: form.bed_number,
                         name: form.name,
@@ -884,15 +754,10 @@
                     <nav className="bg-slate-800 text-white shadow-lg sticky top-0 z-50 no-print">
                         <div className="container mx-auto px-4 flex justify-between items-center h-16">
                             <h1 className="text-xl font-bold flex items-center"><i className="fas fa-heartbeat text-red-400 mr-2"></i>職能治療運動追蹤系統</h1>
-                            <div className="flex items-center space-x-4">
-                                <div className="flex space-x-1">
-                                    {[{id:'population',l:'族群概況',i:'fa-users'},{id:'individual',l:'個案報告',i:'fa-file-medical'},{id:'entry',l:'資料輸入',i:'fa-edit'}].map(t => (
-                                        <button key={t.id} onClick={()=>setCurrentPage(t.id)} className={`px-4 py-2 rounded transition flex items-center ${currentPage===t.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-slate-700'}`}><i className={`fas ${t.i} mr-2`}></i>{t.l}</button>
-                                    ))}
-                                </div>
-                                <button onClick={handleLogout} className="px-4 py-2 rounded transition bg-red-600 hover:bg-red-700 text-white flex items-center">
-                                    <i className="fas fa-sign-out-alt mr-2"></i>登出
-                                </button>
+                            <div className="flex space-x-1">
+                                {[{id:'population',l:'族群概況',i:'fa-users'},{id:'individual',l:'個案報告',i:'fa-file-medical'},{id:'entry',l:'資料輸入',i:'fa-edit'}].map(t => (
+                                    <button key={t.id} onClick={()=>setCurrentPage(t.id)} className={`px-4 py-2 rounded transition flex items-center ${currentPage===t.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-slate-700'}`}><i className={`fas ${t.i} mr-2`}></i>{t.l}</button>
+                                ))}
                             </div>
                         </div>
                     </nav>
