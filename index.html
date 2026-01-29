@@ -333,13 +333,9 @@
             const [currentPage, setCurrentPage] = useState('population');
             const [isLoading, setIsLoading] = useState(false);
 
-            // 檢查是否已登入（sessionStorage）
+            // 清除任何舊的登入資訊，強制重新登入
             useEffect(() => {
-                const savedPassword = sessionStorage.getItem('apiPassword');
-                if (savedPassword) {
-                    setApiPassword(savedPassword);
-                    setIsAuthenticated(true);
-                }
+                sessionStorage.removeItem('apiPassword');
             }, []);
             
             const processData = (rawData) => {
