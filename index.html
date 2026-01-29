@@ -242,70 +242,93 @@
             return Math.min(Math.max(score, 10), 120);
         };
 
-        // --- 主程式 (已修改：加入登入邏輯與 GAS 串接) ---
+        // --- 主程式 (已修改：移除所有假資料產生邏輯) ---
         const Dashboard = () => {
+            // 初始化為空陣列，確保沒有預設資料
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
             
-            // 新增：登入相關狀態
+            // 登入狀態
             const [isLoggedIn, setIsLoggedIn] = useState(false);
             const [password, setPassword] = useState("");
             const [isLoggingIn, setIsLoggingIn] = useState(false);
             
             const processData = (rawData) => {
                 return rawData.map(row => {
-                    // 確保數值型別正確，並計算尚未計算的欄位
-                    const h = parseFloat(row.height);
-                    const w = parseFloat(row.weight);
-                    const mp = parseFloat(row.muscle_percent);
-                    const age = row.age || calcAge(row.dob); // 若 GAS 沒回傳年齡則重算
+                    // 檢查欄位名稱，相容中文欄位與英文欄位 (防止 GAS 回傳中文 Key 導致空白)
+                    const _h = row.height || row['身高'];
+                    const _w = row.weight || row['體重'];
+                    const _mp = row.muscle_percent || row['骨骼肌'];
+                    const _waist = row.waist || row['腰圍'];
+                    const _hip = row.hip || row['臀圍'];
+                    const _bf = row.body_fat || row['體脂率'];
+                    const _vf = row.visceral_fat || row['內臟脂肪'];
+                    const _ba = row.body_age || row['體年齡'];
+                    const _bmr = row.bmr || row['基礎代謝'];
+                    const _ss = row.sit_stand_30s || row['30秒坐站'];
+                    const _w6 = row.walk_6m || row['六分鐘行走'];
+                    const _flex = row.flexibility || row['柔軟度'];
+                    const _su = row.sit_ups_1m || row['仰臥起坐'];
+                    const _sex = row.sex || row['性別'] || '男';
+                    const _dob = row.dob || row['出生年月日'];
+                    
+                    const h = parseFloat(_h);
+                    const w = parseFloat(_w);
+                    const mp = parseFloat(_mp);
+                    const age = row.age || calcAge(_dob); 
                     
                     const bmi = calcBMI(h, w);
                     const smi = calcSMI(h, w, mp);
-                    const whr = (row.waist && row.hip) ? parseFloat(row.waist) / parseFloat(row.hip) : 0;
-                    const predicted6m = calc6MWTPredicted(row.sex, age, h, w);
+                    const whr = (_waist && _hip) ? parseFloat(_waist) / parseFloat(_hip) : 0;
+                    const predicted6m = calc6MWTPredicted(_sex, age, h, w);
                     
                     // BMR Status
-                    const bmrTarget = getBMRTarget(row.sex, age);
-                    const bmrStatus = (row.bmr < bmrTarget * 0.9) ? "偏低" : (row.bmr > bmrTarget * 1.1) ? "偏高" : "標準";
+                    const bmrTarget = getBMRTarget(_sex, age);
+                    const bmrStatus = (_bmr < bmrTarget * 0.9) ? "偏低" : (_bmr > bmrTarget * 1.1) ? "偏高" : "標準";
 
                     return {
                         ...row,
+                        // 統一標準化欄位名稱
+                        id: row.id || `id_${Math.random()}`,
+                        name: row.name || row['姓名'],
+                        bed_number: row.bed_number || row['床號'],
+                        sex: _sex,
+                        date: row.date || row['評估日期'],
+                        dob: _dob,
                         age: age,
-                        // 統一轉為數值，避免字串計算錯誤
-                        height: h, weight: w, waist: parseFloat(row.waist), hip: parseFloat(row.hip),
-                        body_fat: parseFloat(row.body_fat), muscle_percent: mp, visceral_fat: parseFloat(row.visceral_fat),
-                        body_age: parseFloat(row.body_age), bmr: parseFloat(row.bmr),
-                        sit_stand_30s: parseFloat(row.sit_stand_30s), walk_6m: parseFloat(row.walk_6m),
-                        flexibility: parseFloat(row.flexibility), sit_ups_1m: parseFloat(row.sit_ups_1m),
+                        height: h, weight: w, waist: parseFloat(_waist), hip: parseFloat(_hip),
+                        body_fat: parseFloat(_bf), muscle_percent: mp, visceral_fat: parseFloat(_vf),
+                        body_age: parseFloat(_ba), bmr: parseFloat(_bmr),
+                        sit_stand_30s: parseFloat(_ss), walk_6m: parseFloat(_w6),
+                        flexibility: parseFloat(_flex), sit_ups_1m: parseFloat(_su),
                         
-                        // 計算欄位
+                        // 計算指標
                         bmi: parseFloat(bmi.toFixed(1)),
                         smi: parseFloat(smi.toFixed(1)),
                         whr: parseFloat(whr.toFixed(1)),
                         predicted_walk_6m: parseFloat(predicted6m.toFixed(0)),
                         bmi_status: getBMIStatus(bmi),
-                        sarcopenia_status: getSarcopeniaStatus(row.sex, smi),
-                        visceral_status: getVisceralFatStatus(row.visceral_fat),
-                        body_fat_status: getBodyFatStatus(row.sex, row.body_fat),
-                        muscle_status: getMuscleStatus(row.sex, row.muscle_percent),
-                        whr_status: getWHRStatus(row.sex, whr),
+                        sarcopenia_status: getSarcopeniaStatus(_sex, smi),
+                        visceral_status: getVisceralFatStatus(parseFloat(_vf)),
+                        body_fat_status: getBodyFatStatus(_sex, parseFloat(_bf)),
+                        muscle_status: getMuscleStatus(_sex, mp),
+                        whr_status: getWHRStatus(_sex, whr),
                         bmr_status: bmrStatus
                     };
                 });
             };
 
-            // 新增：處理登入與資料抓取
+            // 登入並從 GAS 獲取資料
             const handleLogin = async (e) => {
                 e.preventDefault();
                 setIsLoggingIn(true);
                 
                 try {
-                    // 使用 GET 請求並帶上密碼參數
                     const response = await fetch(`${GAS_API_URL}?password=${password}`);
                     const json = await response.json();
                     
                     if (json.status === 'success') {
+                        // 成功獲取資料，處理後寫入狀態
                         const processed = processData(json.data);
                         setData(processed);
                         setIsLoggedIn(true);
@@ -320,11 +343,10 @@
                 }
             };
             
-            // 寫入資料到 GAS (用於資料輸入頁面)
             const saveDataToGAS = async (newData) => {
                 try {
                     const payload = {
-                        password: password, // 使用登入時的密碼
+                        password: password, 
                         ...newData
                     };
                     
@@ -354,18 +376,9 @@
                     try {
                         const wb = XLSX.read(evt.target.result, { type: 'binary' });
                         const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                        const mapped = jsonData.map((row, idx) => ({
-                            id: `import_${idx}`,
-                            name: row['姓名'], bed_number: row['床號'], sex: row['性別']||'男',
-                            session: row['次數'] || 1, date: row['評估日期'], dob: row['出生年月日'],
-                            height: row['身高'], weight: row['體重'], waist: row['腰圍'], hip: row['臀圍'],
-                            body_fat: row['體脂率'], muscle_percent: row['骨骼肌'], visceral_fat: row['內臟脂肪'],
-                            body_age: row['體年齡'], bmr: row['基礎代謝'],
-                            sit_stand_30s: row['30秒坐站'], walk_6m: row['六分鐘行走'],
-                            flexibility: row['柔軟度'], sit_ups_1m: row['仰臥起坐']
-                        }));
-                        const calculatedData = mapped.map(d => ({ ...d, age: calcAge(d.dob) }));
-                        setData(prev => [...prev, ...processData(calculatedData)]);
+                        // 直接送入 processData 處理，不手動 map，依賴 processData 的相容性
+                        const processed = processData(jsonData);
+                        setData(prev => [...prev, ...processed]);
                         alert("本機匯入成功 (注意：這些資料尚未儲存到雲端)");
                     } catch (err) { alert("匯入失敗"); }
                 };
@@ -381,7 +394,6 @@
                 
                 const latestMap = new Map();
                 filteredData.forEach(d => {
-                    // Unique Person Logic: Name + DOB + Bed (to handle same name, diff person)
                     const key = `${d.name}_${d.dob}`;
                     if (!latestMap.has(key) || new Date(d.date) > new Date(latestMap.get(key).date)) {
                         latestMap.set(key, d);
@@ -395,7 +407,7 @@
                 const riskSarcopenia = latestRecords.filter(d => d.sarcopenia_status === '肌少症').length;
                 const riskVisceral = latestRecords.filter(d => d.visceral_status !== '標準').length;
                 const riskObesity = latestRecords.filter(d => ['中度肥胖', '重度肥胖', '過重'].includes(d.bmi_status)).length;
-                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length; // Keep simple threshold for population view
+                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length;
 
                 const datesForChart = selectedDates.length > 0 ? selectedDates.sort() : allDates;
                 const getAvg = (date, field) => {
@@ -463,17 +475,16 @@
 
             // --- Page 2: 個案報告 (保持不變) ---
             const IndividualReportView = () => {
-                // Unique People Selector Logic
                 const uniquePeople = useMemo(() => {
                     const map = new Map();
                     data.forEach(d => {
-                        const key = `${d.name}_${d.dob}`; // Unique ID Key
+                        const key = `${d.name}_${d.dob}`; 
                         if (!map.has(key)) map.set(key, d);
                     });
                     return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
                 }, [data]);
 
-                const [selKey, setSelKey] = useState(""); // Stores name_dob
+                const [selKey, setSelKey] = useState(""); 
                 const [selDate, setSelDate] = useState("");
 
                 useEffect(() => {
@@ -482,7 +493,6 @@
                     }
                 }, [uniquePeople]);
 
-                // Filter records by Name AND DOB
                 const personRecords = useMemo(() => {
                     if (!selKey) return [];
                     const [n, d] = selKey.split('_');
@@ -511,7 +521,6 @@
                 const sitUpsStd = getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age);
                 const walkStd = current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'};
 
-                // OT 綜合評語生成
                 const generateAnalysis = () => {
                     const statusText = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強';
                     const bmiAnalysis = current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準";
@@ -720,12 +729,11 @@
                         age: parseInt(form.age)
                     };
                     
-                    // 呼叫 GAS API 儲存
                     const success = await saveDataToGAS(newData);
                     
                     if (success) {
-                        // 儲存成功後更新本地資料
-                        setData(prev => [...prev, ...processData([newData])]);
+                        const processed = processData([newData]); // 這裡只是本地更新，不會有假資料
+                        setData(prev => [...prev, ...processed]);
                         alert("新增成功！資料已同步至雲端。");
                         setForm({ ...form, name: '', bed_number: '' });
                     }
@@ -781,7 +789,6 @@
                 );
             };
 
-            // 如果尚未登入，顯示登入畫面
             if (!isLoggedIn) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -798,7 +805,6 @@
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        placeholder="" 
                                     />
                                 </div>
                                 <button 
@@ -814,7 +820,6 @@
                 );
             }
 
-            // 登入後顯示主畫面
             return (
                 <div className="min-h-screen pb-10">
                     <nav className="bg-slate-800 text-white shadow-lg sticky top-0 z-50 no-print">
@@ -828,7 +833,7 @@
                         </div>
                     </nav>
                     <main className="container mx-auto mt-8 px-4">
-                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-spinner fa-spin text-4xl mb-4"></i><p>資料讀取中...</p></div> : 
+                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-inbox text-4xl mb-4"></i><p>目前無資料，請先輸入或匯入資料。</p></div> : 
                             currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView />
                         }
                     </main>
