@@ -54,6 +54,13 @@
         /* 下拉選單 */
         .dropdown-content { display: none; position: absolute; background-color: white; min-width: 200px; box-shadow: 0px 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; border-radius: 0.5rem; z-index: 20; max-height: 250px; overflow-y: auto; }
         .dropdown:hover .dropdown-content { display: block; }
+
+        /* 登入遮罩 */
+        .login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #f3f4f6; z-index: 100;
+            display: flex; align-items: center; justify-content: center;
+        }
     </style>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -70,10 +77,10 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         
-        // GAS API URL
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
+        // --- 設定區 ---
+        const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
 
-        // --- 圖表元件 (保持不變) ---
+        // --- 圖表元件 ---
         const ChartComponent = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstanceRef = useRef(null);
@@ -95,7 +102,7 @@
         const Line = (props) => <ChartComponent type="line" {...props} />;
         const Radar = (props) => <ChartComponent type="radar" {...props} />;
 
-        // --- 互動式圖表容器 (保持不變) ---
+        // --- 互動式圖表容器 ---
         const InteractiveChart = ({ title, datasets, labels, initialSelected = [] }) => {
             const [selectedKeys, setSelectedKeys] = useState(initialSelected.length > 0 ? initialSelected : datasets.map(d => d.label));
 
@@ -131,12 +138,13 @@
             );
         };
 
-        // --- 邏輯與標準 (保持不變) ---
+        // --- 邏輯與標準 (Updated) ---
         const calcAge = (dob) => { if(!dob) return 0; const d = new Date(dob); return new Date().getFullYear() - d.getFullYear(); };
         const calcBMI = (h, w) => (!h || !w) ? 0 : w / Math.pow(h / 100, 2);
         const calcSMI = (h, w, mp) => (!h || !w || !mp) ? 0 : (w * mp / 100) / Math.pow(h / 100, 2);
         const calc6MWTPredicted = (sex, age, h, w) => (sex === "女") ? 2.11*h - 2.29*w - 5.78*age + 667 : 7.57*h - 1.76*w - 5.02*age - 309;
         
+        // 評語標準邏輯 (Updated)
         const getBodyFatStatus = (sex, val) => {
             if (sex === "男") {
                 if (val < 10) return "低";
@@ -171,14 +179,16 @@
             return "高";
         };
 
+        // 30秒坐站標準值查找 (Based on provided IF logic)
         const getSitStandTarget = (sex, age) => {
             if (age >= 3 && age <= 9) return sex === "男" ? 23.1 : 23.4;
             if (age >= 10 && age <= 19) return sex === "男" ? 25.5 : 24.3;
             if (age >= 20 && age <= 59) return sex === "男" ? 24.2 : 22.6;
             if (age >= 60) return sex === "男" ? 18.3 : 15.9;
-            return 15;
+            return 15; // Fallback
         };
 
+        // BMR 標準查找
         const getBMRTarget = (sex, age) => {
             if (sex === '男') {
                 if (age >= 15 && age <= 17) return 1570;
@@ -193,15 +203,20 @@
                 if (age >= 50 && age <= 69) return 1100;
                 if (age >= 70) return 1030;
             }
-            return 1200;
+            return 1200; // Fallback
         };
 
+        // 柔軟度與仰臥起坐 常模對照 (Simplified implementation of the complex tables)
         const getFitnessRating = (type, sex, age, val) => {
+            // 定義年齡區間與對應的"適當"(Average)範圍下限
+            // 這裡簡化實作，若需完整表格可進一步擴充
             let base = 0;
             if (type === 'sit_ups') {
+                // 仰臥起坐常模 (概略)
                 if (sex === '男') base = age < 30 ? 35 : age < 40 ? 30 : age < 50 ? 25 : age < 60 ? 20 : 15;
                 else base = age < 30 ? 27 : age < 40 ? 22 : age < 50 ? 17 : age < 60 ? 13 : 8;
             } else {
+                // 柔軟度常模 (概略)
                 if (sex === '男') base = age < 30 ? 28 : age < 40 ? 24 : age < 50 ? 18 : age < 60 ? 15 : 12;
                 else base = age < 30 ? 33 : age < 40 ? 30 : age < 50 ? 27 : age < 60 ? 25 : 22;
             }
@@ -221,6 +236,7 @@
             }
             if (type === 'walk') return { status: "-", color: "" };
             
+            // 使用新的常模邏輯
             if (type === 'sit_ups') {
                 const r = getFitnessRating('sit_ups', sex, age, val);
                 return { status: r.s, color: r.c };
@@ -242,130 +258,91 @@
             return Math.min(Math.max(score, 10), 120);
         };
 
-        // --- 主程式 (已修改：移除所有假資料產生邏輯) ---
+        // --- 主程式 ---
         const Dashboard = () => {
-            // 初始化為空陣列，確保沒有預設資料
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
-            
-            // 登入狀態
             const [isLoggedIn, setIsLoggedIn] = useState(false);
             const [password, setPassword] = useState("");
-            const [isLoggingIn, setIsLoggingIn] = useState(false);
+            const [inputPw, setInputPw] = useState("");
+            const [loading, setLoading] = useState(false);
             
             const processData = (rawData) => {
                 return rawData.map(row => {
-                    // 檢查欄位名稱，相容中文欄位與英文欄位 (防止 GAS 回傳中文 Key 導致空白)
-                    const _h = row.height || row['身高'];
-                    const _w = row.weight || row['體重'];
-                    const _mp = row.muscle_percent || row['骨骼肌'];
-                    const _waist = row.waist || row['腰圍'];
-                    const _hip = row.hip || row['臀圍'];
-                    const _bf = row.body_fat || row['體脂率'];
-                    const _vf = row.visceral_fat || row['內臟脂肪'];
-                    const _ba = row.body_age || row['體年齡'];
-                    const _bmr = row.bmr || row['基礎代謝'];
-                    const _ss = row.sit_stand_30s || row['30秒坐站'];
-                    const _w6 = row.walk_6m || row['六分鐘行走'];
-                    const _flex = row.flexibility || row['柔軟度'];
-                    const _su = row.sit_ups_1m || row['仰臥起坐'];
-                    const _sex = row.sex || row['性別'] || '男';
-                    const _dob = row.dob || row['出生年月日'];
-                    
-                    const h = parseFloat(_h);
-                    const w = parseFloat(_w);
-                    const mp = parseFloat(_mp);
-                    const age = row.age || calcAge(_dob); 
-                    
-                    const bmi = calcBMI(h, w);
-                    const smi = calcSMI(h, w, mp);
-                    const whr = (_waist && _hip) ? parseFloat(_waist) / parseFloat(_hip) : 0;
-                    const predicted6m = calc6MWTPredicted(_sex, age, h, w);
+                    // Ensure numbers
+                    const height = parseFloat(row.height);
+                    const weight = parseFloat(row.weight);
+                    const muscle_percent = parseFloat(row.muscle_percent);
+                    const waist = parseFloat(row.waist);
+                    const hip = parseFloat(row.hip);
+                    const age = parseInt(row.age);
+                    const bmr = parseFloat(row.bmr);
+                    const visceral_fat = parseFloat(row.visceral_fat);
+                    const body_fat = parseFloat(row.body_fat);
+
+                    const bmi = calcBMI(height, weight);
+                    const smi = calcSMI(height, weight, muscle_percent);
+                    const whr = (waist && hip) ? waist / hip : 0;
+                    const predicted6m = calc6MWTPredicted(row.sex, age, height, weight);
                     
                     // BMR Status
-                    const bmrTarget = getBMRTarget(_sex, age);
-                    const bmrStatus = (_bmr < bmrTarget * 0.9) ? "偏低" : (_bmr > bmrTarget * 1.1) ? "偏高" : "標準";
+                    const bmrTarget = getBMRTarget(row.sex, age);
+                    const bmrStatus = (bmr < bmrTarget * 0.9) ? "偏低" : (bmr > bmrTarget * 1.1) ? "偏高" : "標準";
 
                     return {
                         ...row,
-                        // 統一標準化欄位名稱
-                        id: row.id || `id_${Math.random()}`,
-                        name: row.name || row['姓名'],
-                        bed_number: row.bed_number || row['床號'],
-                        sex: _sex,
-                        date: row.date || row['評估日期'],
-                        dob: _dob,
-                        age: age,
-                        height: h, weight: w, waist: parseFloat(_waist), hip: parseFloat(_hip),
-                        body_fat: parseFloat(_bf), muscle_percent: mp, visceral_fat: parseFloat(_vf),
-                        body_age: parseFloat(_ba), bmr: parseFloat(_bmr),
-                        sit_stand_30s: parseFloat(_ss), walk_6m: parseFloat(_w6),
-                        flexibility: parseFloat(_flex), sit_ups_1m: parseFloat(_su),
-                        
-                        // 計算指標
+                        height, weight, muscle_percent, waist, hip, age, bmr, visceral_fat, body_fat,
+                        sit_stand_30s: parseFloat(row.sit_stand_30s),
+                        walk_6m: parseFloat(row.walk_6m),
+                        flexibility: parseFloat(row.flexibility),
+                        sit_ups_1m: parseFloat(row.sit_ups_1m),
                         bmi: parseFloat(bmi.toFixed(1)),
                         smi: parseFloat(smi.toFixed(1)),
                         whr: parseFloat(whr.toFixed(1)),
                         predicted_walk_6m: parseFloat(predicted6m.toFixed(0)),
                         bmi_status: getBMIStatus(bmi),
-                        sarcopenia_status: getSarcopeniaStatus(_sex, smi),
-                        visceral_status: getVisceralFatStatus(parseFloat(_vf)),
-                        body_fat_status: getBodyFatStatus(_sex, parseFloat(_bf)),
-                        muscle_status: getMuscleStatus(_sex, mp),
-                        whr_status: getWHRStatus(_sex, whr),
+                        sarcopenia_status: getSarcopeniaStatus(row.sex, smi),
+                        visceral_status: getVisceralFatStatus(visceral_fat),
+                        body_fat_status: getBodyFatStatus(row.sex, body_fat),
+                        muscle_status: getMuscleStatus(row.sex, muscle_percent),
+                        whr_status: getWHRStatus(row.sex, whr),
                         bmr_status: bmrStatus
                     };
                 });
             };
 
-            // 登入並從 GAS 獲取資料
+            // Login Logic
             const handleLogin = async (e) => {
                 e.preventDefault();
-                setIsLoggingIn(true);
-                
+                setLoading(true);
                 try {
-                    const response = await fetch(`${GAS_API_URL}?password=${password}`);
-                    const json = await response.json();
-                    
-                    if (json.status === 'success') {
-                        // 成功獲取資料，處理後寫入狀態
-                        const processed = processData(json.data);
-                        setData(processed);
+                    const res = await fetch(`${API_URL}?password=${inputPw}`);
+                    const json = await res.json();
+                    if(json.status === 'success') {
+                        // Data loaded
+                        setData(processData(json.data));
+                        setPassword(inputPw);
                         setIsLoggedIn(true);
                     } else {
-                        alert(json.message || "登入失敗");
+                        alert("登入失敗: " + json.message);
                     }
-                } catch (error) {
-                    console.error(error);
-                    alert("連線錯誤，請檢查網路或稍後再試。");
-                } finally {
-                    setIsLoggingIn(false);
+                } catch(err) {
+                    alert("連線失敗，請檢查網路。");
                 }
+                setLoading(false);
             };
-            
-            const saveDataToGAS = async (newData) => {
+
+            // Refresh Data helper
+            const refreshData = async () => {
+                setLoading(true);
                 try {
-                    const payload = {
-                        password: password, 
-                        ...newData
-                    };
-                    
-                    const response = await fetch(GAS_API_URL, {
-                        method: 'POST',
-                        body: JSON.stringify(payload)
-                    });
-                    const json = await response.json();
-                    
-                    if (json.status === 'success') {
-                        return true;
-                    } else {
-                        alert("儲存失敗: " + json.message);
-                        return false;
+                    const res = await fetch(`${API_URL}?password=${password}`);
+                    const json = await res.json();
+                    if(json.status === 'success') {
+                        setData(processData(json.data));
                     }
-                } catch (e) {
-                    alert("連線錯誤");
-                    return false;
-                }
+                } catch(e) { console.error(e); }
+                setLoading(false);
             };
 
             const handleFileUpload = (e) => {
@@ -376,16 +353,25 @@
                     try {
                         const wb = XLSX.read(evt.target.result, { type: 'binary' });
                         const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                        // 直接送入 processData 處理，不手動 map，依賴 processData 的相容性
-                        const processed = processData(jsonData);
-                        setData(prev => [...prev, ...processed]);
-                        alert("本機匯入成功 (注意：這些資料尚未儲存到雲端)");
+                        const mapped = jsonData.map((row, idx) => ({
+                            id: `import_${idx}`,
+                            name: row['姓名'], bed_number: row['床號'], sex: row['性別']||'男',
+                            session: row['次數'] || 1, date: row['評估日期'], dob: row['出生年月日'],
+                            height: row['身高'], weight: row['體重'], waist: row['腰圍'], hip: row['臀圍'],
+                            body_fat: row['體脂率'], muscle_percent: row['骨骼肌'], visceral_fat: row['內臟脂肪'],
+                            body_age: row['體年齡'], bmr: row['基礎代謝'],
+                            sit_stand_30s: row['30秒坐站'], walk_6m: row['六分鐘行走'],
+                            flexibility: row['柔軟度'], sit_ups_1m: row['仰臥起坐']
+                        }));
+                        const calculatedData = mapped.map(d => ({ ...d, age: calcAge(d.dob) }));
+                        setData(prev => [...prev, ...processData(calculatedData)]);
+                        alert("匯入預覽成功！(請注意：Excel匯入僅供當次檢視，若需儲存請使用手動輸入)");
                     } catch (err) { alert("匯入失敗"); }
                 };
                 reader.readAsBinaryString(file);
             };
 
-            // --- Page 1: 族群概況 (保持不變) ---
+            // --- Page 1: 族群概況 ---
             const PopulationView = () => {
                 const allDates = [...new Set(data.map(d => d.date))].sort();
                 const [selectedDates, setSelectedDates] = useState(allDates);
@@ -394,6 +380,7 @@
                 
                 const latestMap = new Map();
                 filteredData.forEach(d => {
+                    // Unique Person Logic: Name + DOB + Bed (to handle same name, diff person)
                     const key = `${d.name}_${d.dob}`;
                     if (!latestMap.has(key) || new Date(d.date) > new Date(latestMap.get(key).date)) {
                         latestMap.set(key, d);
@@ -407,7 +394,7 @@
                 const riskSarcopenia = latestRecords.filter(d => d.sarcopenia_status === '肌少症').length;
                 const riskVisceral = latestRecords.filter(d => d.visceral_status !== '標準').length;
                 const riskObesity = latestRecords.filter(d => ['中度肥胖', '重度肥胖', '過重'].includes(d.bmi_status)).length;
-                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length;
+                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length; // Keep simple threshold for population view
 
                 const datesForChart = selectedDates.length > 0 ? selectedDates.sort() : allDates;
                 const getAvg = (date, field) => {
@@ -473,18 +460,19 @@
                 );
             };
 
-            // --- Page 2: 個案報告 (保持不變) ---
+            // --- Page 2: 個案報告 ---
             const IndividualReportView = () => {
+                // Unique People Selector Logic
                 const uniquePeople = useMemo(() => {
                     const map = new Map();
                     data.forEach(d => {
-                        const key = `${d.name}_${d.dob}`; 
+                        const key = `${d.name}_${d.dob}`; // Unique ID Key
                         if (!map.has(key)) map.set(key, d);
                     });
                     return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
                 }, [data]);
 
-                const [selKey, setSelKey] = useState(""); 
+                const [selKey, setSelKey] = useState(""); // Stores name_dob
                 const [selDate, setSelDate] = useState("");
 
                 useEffect(() => {
@@ -493,6 +481,7 @@
                     }
                 }, [uniquePeople]);
 
+                // Filter records by Name AND DOB
                 const personRecords = useMemo(() => {
                     if (!selKey) return [];
                     const [n, d] = selKey.split('_');
@@ -521,6 +510,7 @@
                 const sitUpsStd = getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age);
                 const walkStd = current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'};
 
+                // OT 綜合評語生成
                 const generateAnalysis = () => {
                     const statusText = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強';
                     const bmiAnalysis = current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準";
@@ -698,7 +688,7 @@
                 );
             };
 
-            // --- Page 3: 資料輸入 (保持不變) ---
+            // --- Page 3: 資料輸入 ---
             const DataEntryView = () => {
                 const [form, setForm] = useState({ 
                     date: new Date().toISOString().split('T')[0], bed_number: '', name: '', 
@@ -717,9 +707,11 @@
 
                 const handleSubmit = async (e) => {
                     e.preventDefault();
-                    
+                    setLoading(true);
+
                     const newData = {
-                        ...form, session: 1,
+                        ...form, 
+                        password: password, // Send password for verification
                         height: parseFloat(form.height), weight: parseFloat(form.weight),
                         waist: parseFloat(form.waist), hip: parseFloat(form.hip),
                         body_fat: parseFloat(form.body_fat), muscle_percent: parseFloat(form.muscle_percent),
@@ -728,15 +720,25 @@
                         flexibility: parseFloat(form.flexibility), sit_ups_1m: parseFloat(form.sit_ups_1m),
                         age: parseInt(form.age)
                     };
-                    
-                    const success = await saveDataToGAS(newData);
-                    
-                    if (success) {
-                        const processed = processData([newData]); // 這裡只是本地更新，不會有假資料
-                        setData(prev => [...prev, ...processed]);
-                        alert("新增成功！資料已同步至雲端。");
-                        setForm({ ...form, name: '', bed_number: '' });
+
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify(newData)
+                        });
+                        const json = await res.json();
+                        
+                        if(json.status === 'success') {
+                            alert("新增成功！資料已寫入雲端。");
+                            setForm({ ...form, name: '', bed_number: '' });
+                            refreshData(); // Reload data from sheet
+                        } else {
+                            alert("新增失敗: " + json.message);
+                        }
+                    } catch(err) {
+                        alert("連線失敗");
                     }
+                    setLoading(false);
                 };
 
                 return (
@@ -783,36 +785,35 @@
                                     <label className="block text-sm">仰臥起坐 (次) <input type="number" name="sit_ups_1m" value={form.sit_ups_1m} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                 </div>
                             </div>
-                            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow">新增並上傳雲端</button>
+                            <button type="submit" disabled={loading} className={`w-full text-white py-3 rounded-lg font-bold shadow ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                {loading ? '處理中...' : '新增一筆資料 (寫入雲端)'}
+                            </button>
                         </form>
                     </div>
                 );
             };
 
+            // Login Screen
             if (!isLoggedIn) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-gray-200">
+                    <div className="login-overlay">
+                        <div className="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-gray-200">
                             <div className="text-center mb-6">
-                                <i className="fas fa-heartbeat text-red-400 text-5xl mb-4"></i>
-                                <h2 className="text-xl font-bold text-gray-800">職能治療運動追蹤系統</h2>
-                                <p className="text-gray-500 text-sm mt-1">請輸入密碼以存取資料</p>
+                                <div className="text-4xl text-blue-600 mb-2"><i className="fas fa-shield-alt"></i></div>
+                                <h2 className="text-xl font-bold text-gray-800">系統登入</h2>
+                                <p className="text-sm text-gray-500">Occupational Therapy Fitness Tracker</p>
                             </div>
                             <form onSubmit={handleLogin}>
-                                <div className="mb-4">
-                                    <input 
-                                        type="password" 
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <button 
-                                    type="submit" 
-                                    disabled={isLoggingIn}
-                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow transition flex justify-center items-center"
-                                >
-                                    {isLoggingIn ? <><i className="fas fa-spinner fa-spin mr-2"></i>登入中...</> : "登入系統"}
+                                <input 
+                                    type="password" 
+                                    placeholder="請輸入系統密碼" 
+                                    className="w-full border p-3 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={inputPw}
+                                    onChange={e => setInputPw(e.target.value)}
+                                    autoFocus
+                                />
+                                <button type="submit" disabled={loading} className={`w-full text-white p-3 rounded font-bold ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                    {loading ? '驗證中...' : '進入系統'}
                                 </button>
                             </form>
                         </div>
@@ -833,9 +834,8 @@
                         </div>
                     </nav>
                     <main className="container mx-auto mt-8 px-4">
-                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-inbox text-4xl mb-4"></i><p>目前無資料，請先輸入或匯入資料。</p></div> : 
-                            currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView />
-                        }
+                        {loading && <div className="fixed top-4 right-4 bg-black/70 text-white px-4 py-2 rounded z-[60]"><i className="fas fa-spinner fa-spin mr-2"></i>讀取中...</div>}
+                        {currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView /> }
                     </main>
                 </div>
             );
