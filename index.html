@@ -222,7 +222,10 @@
         const Dashboard = () => {
             // ★★★ 關鍵修改處：已填入你的 GAS 網址 ★★★
             const API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
-            const API_PASS = "8888";
+        
+            // 使用 State 存密碼與登入狀態
+            const [apiPass, setApiPass] = useState(""); 
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
 
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
@@ -258,7 +261,8 @@
             const fetchData = async () => {
                 setIsLoading(true);
                 try {
-                    const res = await fetch(`${API_URL}?password=${API_PASS}`);
+                   // 使用使用者輸入的 apiPass
+                    const res = await fetch(`${API_URL}?password=${apiPass}`);
                     const json = await res.json();
                     
                     if (json.status === 'success') {
@@ -302,9 +306,6 @@
                 }
             };
 
-            useEffect(() => { 
-                fetchData(); 
-            }, []);
 
             // --- Page 1: 族群概況 ---
             const PopulationView = () => {
@@ -650,7 +651,7 @@
                     const whr = (form.waist && form.hip) ? (form.waist / form.hip).toFixed(2) : 0;
 
                     const payload = {
-                        password: API_PASS,
+                        password: apiPass,
                         id: Date.now().toString(),
                         bed_number: form.bed_number,
                         name: form.name,
@@ -748,7 +749,76 @@
                     </div>
                 );
             };
+// --- 新增：登入處理函數 ---
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setIsLoading(true);
+                try {
+                    // 嘗試用輸入的密碼連線
+                    const res = await fetch(`${API_URL}?password=${apiPass}`);
+                    const json = await res.json();
+                    
+                    if (json.status === 'success') {
+                        // 驗證成功，手動執行原本的資料處理邏輯
+                        const sheetData = json.data.map(row => ({
+                            id: row['唯一識別碼'], bed_number: row['床號'], name: row['姓名'], sex: row['性別'],
+                            dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
+                            age: Number(row['年齡']), session: row['評估次別'],
+                            date: row['評估日期'] ? new Date(row['評估日期']).toISOString().split('T')[0] : "",
+                            height: Number(row['身高(cm)']), weight: Number(row['體重(kg)']), bmi: Number(row['BMI']),
+                            body_fat: Number(row['體脂肪(%)']), muscle_percent: Number(row['骨骼肌(%)']), visceral_fat: Number(row['內臟脂肪']),
+                            smi: Number(row['SMI']), bmr: Number(row['基礎代謝(kcal)']), body_age: Number(row['體年齡']),
+                            waist: Number(row['腰圍(cm)']), hip: Number(row['臀圍(cm)']), whr: Number(row['腰臀比']),
+                            sit_ups_1m: Number(row['一分鐘仰臥起坐(次)']), walk_6m: Number(row['六分鐘行走測驗(m)']),
+                            flexibility: Number(row['柔軟度(cm)']), sit_stand_30s: Number(row['30秒坐站測驗(次)'])
+                        }));
+                        setData(processData(sheetData));
+                        setIsLoggedIn(true); // 設定為已登入
+                    } else {
+                        alert("登入失敗"); // 簡潔提示
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert("登入失敗");
+                } finally {
+                    setIsLoading(false);
+                }
+            };
 
+            // --- 新增：如果未登入，顯示登入畫面 ---
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen bg-slate-800 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
+                            <div className="text-center mb-6">
+                                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <i className="fas fa-heartbeat text-4xl text-blue-600"></i>
+                                </div>
+                                <h1 className="text-2xl font-bold text-gray-800">OT 運動追蹤系統</h1>
+                            </div>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <div>
+                                    <input 
+                                        type="password" 
+                                        placeholder="請輸入密碼" 
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        value={apiPass}
+                                        onChange={(e) => setApiPass(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+                                <button 
+                                    type="submit" 
+                                    disabled={isLoading}
+                                    className={`w-full py-3 rounded-lg font-bold text-white shadow transition-all ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                >
+                                    {isLoading ? "驗證中..." : "登入"}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
             return (
                 <div className="min-h-screen pb-10">
                     <nav className="bg-slate-800 text-white shadow-lg sticky top-0 z-50 no-print">
