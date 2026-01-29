@@ -70,51 +70,10 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         
-        // --- 登入控制元件 (唯一新增) ---
-        const LoginWrapper = () => {
-            const [password, setPassword] = useState("");
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const CORRECT_PASSWORD = "8888"; // 設定密碼
+        // GAS API URL
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzekI8XHd-ZaT32mCqHzaatmOhB5LSZzNZyfHFIEqkkCUGESm1SCBPO3Hu63mgRUjxEWA/exec";
 
-            const handleLogin = (e) => {
-                e.preventDefault();
-                if (password === CORRECT_PASSWORD) {
-                    setIsLoggedIn(true);
-                } else {
-                    alert("密碼錯誤");
-                    setPassword("");
-                }
-            };
-
-            if (!isLoggedIn) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-slate-900">
-                        <form onSubmit={handleLogin} className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
-                            <i className="fas fa-lock text-slate-400 text-4xl mb-4"></i>
-                            <h2 className="text-xl font-bold mb-6 text-gray-800">系統登入</h2>
-                            <input 
-                                type="password" 
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full border-2 border-gray-200 rounded-lg px-4 py-3 mb-4 focus:border-blue-500 outline-none transition"
-                                placeholder="請輸入密碼"
-                                autoFocus
-                            />
-                            <button 
-                                type="submit"
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition"
-                            >
-                                進入系統
-                            </button>
-                        </form>
-                    </div>
-                );
-            }
-
-            return <Dashboard />;
-        };
-
-        // --- 圖表元件 ---
+        // --- 圖表元件 (保持不變) ---
         const ChartComponent = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstanceRef = useRef(null);
@@ -136,7 +95,7 @@
         const Line = (props) => <ChartComponent type="line" {...props} />;
         const Radar = (props) => <ChartComponent type="radar" {...props} />;
 
-        // --- 互動式圖表容器 ---
+        // --- 互動式圖表容器 (保持不變) ---
         const InteractiveChart = ({ title, datasets, labels, initialSelected = [] }) => {
             const [selectedKeys, setSelectedKeys] = useState(initialSelected.length > 0 ? initialSelected : datasets.map(d => d.label));
 
@@ -172,7 +131,7 @@
             );
         };
 
-        // --- 邏輯與標準 ---
+        // --- 邏輯與標準 (保持不變) ---
         const calcAge = (dob) => { if(!dob) return 0; const d = new Date(dob); return new Date().getFullYear() - d.getFullYear(); };
         const calcBMI = (h, w) => (!h || !w) ? 0 : w / Math.pow(h / 100, 2);
         const calcSMI = (h, w, mp) => (!h || !w || !mp) ? 0 : (w * mp / 100) / Math.pow(h / 100, 2);
@@ -246,6 +205,7 @@
                 if (sex === '男') base = age < 30 ? 28 : age < 40 ? 24 : age < 50 ? 18 : age < 60 ? 15 : 12;
                 else base = age < 30 ? 33 : age < 40 ? 30 : age < 50 ? 27 : age < 60 ? 25 : 22;
             }
+            
             if (val < base * 0.6) return { s: "不好", c: "text-red-600" };
             if (val < base * 0.8) return { s: "稍差", c: "text-orange-600" };
             if (val < base * 1.2) return { s: "適當", c: "text-blue-600" };
@@ -260,6 +220,7 @@
                 return { status: "標準", color: 'text-green-600' };
             }
             if (type === 'walk') return { status: "-", color: "" };
+            
             if (type === 'sit_ups') {
                 const r = getFitnessRating('sit_ups', sex, age, val);
                 return { status: r.s, color: r.c };
@@ -274,33 +235,56 @@
         const getBMIStatus = (bmi) => bmi < 18.5 ? "體重太輕" : bmi < 24 ? "標準體重" : bmi < 27 ? "過重" : bmi < 30 ? "輕度肥胖" : bmi < 35 ? "中度肥胖" : "重度肥胖";
         const getSarcopeniaStatus = (sex, smi) => (sex === "男" && smi < 7.0) || (sex === "女" && smi < 5.7) ? "肌少症" : "正常";
         const getWHRStatus = (sex, v) => (sex === "男" && v < 0.92) || (sex === "女" && v < 0.88) ? "標準" : "過高";
+        
         const normalizeScore = (val, target, type = 'higher_better') => {
             if (!val || !target) return 0;
             let score = type === 'higher_better' ? (val / target) * 100 : val <= target ? 100 : (target / val) * 100;
             return Math.min(Math.max(score, 10), 120);
         };
 
-        // --- 主程式 Dashboard ---
+        // --- 主程式 (已修改：加入登入邏輯與 GAS 串接) ---
         const Dashboard = () => {
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
             
+            // 新增：登入相關狀態
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [password, setPassword] = useState("");
+            const [isLoggingIn, setIsLoggingIn] = useState(false);
+            
             const processData = (rawData) => {
                 return rawData.map(row => {
-                    const bmi = calcBMI(row.height, row.weight);
-                    const smi = calcSMI(row.height, row.weight, row.muscle_percent);
-                    const whr = (row.waist && row.hip) ? row.waist / row.hip : 0;
-                    const predicted6m = calc6MWTPredicted(row.sex, row.age, row.height, row.weight);
-                    const bmrTarget = getBMRTarget(row.sex, row.age);
+                    // 確保數值型別正確，並計算尚未計算的欄位
+                    const h = parseFloat(row.height);
+                    const w = parseFloat(row.weight);
+                    const mp = parseFloat(row.muscle_percent);
+                    const age = row.age || calcAge(row.dob); // 若 GAS 沒回傳年齡則重算
+                    
+                    const bmi = calcBMI(h, w);
+                    const smi = calcSMI(h, w, mp);
+                    const whr = (row.waist && row.hip) ? parseFloat(row.waist) / parseFloat(row.hip) : 0;
+                    const predicted6m = calc6MWTPredicted(row.sex, age, h, w);
+                    
+                    // BMR Status
+                    const bmrTarget = getBMRTarget(row.sex, age);
                     const bmrStatus = (row.bmr < bmrTarget * 0.9) ? "偏低" : (row.bmr > bmrTarget * 1.1) ? "偏高" : "標準";
+
                     return {
                         ...row,
+                        age: age,
+                        // 統一轉為數值，避免字串計算錯誤
+                        height: h, weight: w, waist: parseFloat(row.waist), hip: parseFloat(row.hip),
+                        body_fat: parseFloat(row.body_fat), muscle_percent: mp, visceral_fat: parseFloat(row.visceral_fat),
+                        body_age: parseFloat(row.body_age), bmr: parseFloat(row.bmr),
+                        sit_stand_30s: parseFloat(row.sit_stand_30s), walk_6m: parseFloat(row.walk_6m),
+                        flexibility: parseFloat(row.flexibility), sit_ups_1m: parseFloat(row.sit_ups_1m),
+                        
+                        // 計算欄位
                         bmi: parseFloat(bmi.toFixed(1)),
                         smi: parseFloat(smi.toFixed(1)),
                         whr: parseFloat(whr.toFixed(1)),
                         predicted_walk_6m: parseFloat(predicted6m.toFixed(0)),
                         bmi_status: getBMIStatus(bmi),
-                        sapi_status: getSarcopeniaStatus(row.sex, smi),
                         sarcopenia_status: getSarcopeniaStatus(row.sex, smi),
                         visceral_status: getVisceralFatStatus(row.visceral_fat),
                         body_fat_status: getBodyFatStatus(row.sex, row.body_fat),
@@ -311,33 +295,56 @@
                 });
             };
 
-            const generateMockData = () => {
-                const names = ["張大明", "李小華", "王志明", "陳淑芬", "林建國"];
-                const mock = [];
-                names.forEach((name, idx) => {
-                    const bed = `${200 + idx}`;
-                    const sex = idx % 2 === 0 ? "男" : "女";
-                    const birthYear = 1960 + idx * 5; 
-                    const dob = `${birthYear}-05-15`;
-                    for (let i = 1; i <= 4; i++) {
-                        const age = 2024 - birthYear + Math.floor((i-1)/2); 
-                        const h = 160 + (sex==="男"?10:0) + Math.random()*2;
-                        const w = 60 + Math.random()*5 + (i % 2 === 0 ? -1 : 1);
-                        mock.push({
-                            id: `${idx}_${i}`, name, sex, session: i, bed_number: bed,
-                            date: `202${3+Math.floor((i-1)/2)}-${(i-1)%2===0?'03':'09'}-15`,
-                            dob, age, height: h, weight: w, waist: 80+Math.random()*2, hip: 95+Math.random()*2,
-                            body_fat: 25+Math.random()*3, muscle_percent: 30+Math.random()*2, visceral_fat: 8+Math.random()*3,
-                            body_age: age + 5, bmr: 1350 + Math.random()*100,
-                            sit_stand_30s: 10 + i + Math.floor(Math.random()*2),
-                            walk_6m: 350 + i*15, flexibility: 10 + i, sit_ups_1m: 12 + i
-                        });
+            // 新增：處理登入與資料抓取
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setIsLoggingIn(true);
+                
+                try {
+                    // 使用 GET 請求並帶上密碼參數
+                    const response = await fetch(`${GAS_API_URL}?password=${password}`);
+                    const json = await response.json();
+                    
+                    if (json.status === 'success') {
+                        const processed = processData(json.data);
+                        setData(processed);
+                        setIsLoggedIn(true);
+                    } else {
+                        alert(json.message || "登入失敗");
                     }
-                });
-                return processData(mock);
+                } catch (error) {
+                    console.error(error);
+                    alert("連線錯誤，請檢查網路或稍後再試。");
+                } finally {
+                    setIsLoggingIn(false);
+                }
             };
-
-            useEffect(() => { setData(generateMockData()); }, []);
+            
+            // 寫入資料到 GAS (用於資料輸入頁面)
+            const saveDataToGAS = async (newData) => {
+                try {
+                    const payload = {
+                        password: password, // 使用登入時的密碼
+                        ...newData
+                    };
+                    
+                    const response = await fetch(GAS_API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    const json = await response.json();
+                    
+                    if (json.status === 'success') {
+                        return true;
+                    } else {
+                        alert("儲存失敗: " + json.message);
+                        return false;
+                    }
+                } catch (e) {
+                    alert("連線錯誤");
+                    return false;
+                }
+            };
 
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
@@ -348,7 +355,8 @@
                         const wb = XLSX.read(evt.target.result, { type: 'binary' });
                         const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                         const mapped = jsonData.map((row, idx) => ({
-                            id: `import_${idx}`, name: row['姓名'], bed_number: row['床號'], sex: row['性別']||'男',
+                            id: `import_${idx}`,
+                            name: row['姓名'], bed_number: row['床號'], sex: row['性別']||'男',
                             session: row['次數'] || 1, date: row['評估日期'], dob: row['出生年月日'],
                             height: row['身高'], weight: row['體重'], waist: row['腰圍'], hip: row['臀圍'],
                             body_fat: row['體脂率'], muscle_percent: row['骨骼肌'], visceral_fat: row['內臟脂肪'],
@@ -358,19 +366,22 @@
                         }));
                         const calculatedData = mapped.map(d => ({ ...d, age: calcAge(d.dob) }));
                         setData(prev => [...prev, ...processData(calculatedData)]);
-                        alert("匯入成功！");
+                        alert("本機匯入成功 (注意：這些資料尚未儲存到雲端)");
                     } catch (err) { alert("匯入失敗"); }
                 };
                 reader.readAsBinaryString(file);
             };
 
+            // --- Page 1: 族群概況 (保持不變) ---
             const PopulationView = () => {
                 const allDates = [...new Set(data.map(d => d.date))].sort();
                 const [selectedDates, setSelectedDates] = useState(allDates);
                 const toggleDate = (d) => setSelectedDates(prev => prev.includes(d) ? prev.filter(x=>x!==d) : [...prev,d]);
                 const filteredData = data.filter(d => selectedDates.length === 0 || selectedDates.includes(d.date));
+                
                 const latestMap = new Map();
                 filteredData.forEach(d => {
+                    // Unique Person Logic: Name + DOB + Bed (to handle same name, diff person)
                     const key = `${d.name}_${d.dob}`;
                     if (!latestMap.has(key) || new Date(d.date) > new Date(latestMap.get(key).date)) {
                         latestMap.set(key, d);
@@ -380,15 +391,18 @@
                 const totalPeople = latestRecords.length;
                 const males = latestRecords.filter(d => d.sex === '男').length;
                 const avgAge = totalPeople ? (latestRecords.reduce((a,b) => a + b.age, 0) / totalPeople).toFixed(1) : 0;
+                
                 const riskSarcopenia = latestRecords.filter(d => d.sarcopenia_status === '肌少症').length;
                 const riskVisceral = latestRecords.filter(d => d.visceral_status !== '標準').length;
                 const riskObesity = latestRecords.filter(d => ['中度肥胖', '重度肥胖', '過重'].includes(d.bmi_status)).length;
-                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length;
+                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length; // Keep simple threshold for population view
+
                 const datesForChart = selectedDates.length > 0 ? selectedDates.sort() : allDates;
                 const getAvg = (date, field) => {
                     const dayData = data.filter(d => d.date === date);
                     return dayData.length ? parseFloat((dayData.reduce((a,b)=>a+(b[field]||0),0)/dayData.length).toFixed(1)) : 0;
                 };
+
                 const bodyDatasets = [
                     { label: '體重', data: datesForChart.map(d=>getAvg(d,'weight')), borderColor: '#ef4444' }, 
                     { label: 'BMI', data: datesForChart.map(d=>getAvg(d,'bmi')), borderColor: '#8b5cf6' },
@@ -396,12 +410,14 @@
                     { label: '體脂率', data: datesForChart.map(d=>getAvg(d,'body_fat')), borderColor: '#f59e0b' },
                     { label: '內臟脂肪', data: datesForChart.map(d=>getAvg(d,'visceral_fat')), borderColor: '#2563eb' }
                 ];
+                
                 const fitnessDatasets = [
                     { label: '6分鐘行走', data: datesForChart.map(d=>getAvg(d,'walk_6m')), borderColor: '#8b5cf6' },
                     { label: '30秒坐站', data: datesForChart.map(d=>getAvg(d,'sit_stand_30s')), borderColor: '#ec4899' },
                     { label: '仰臥起坐', data: datesForChart.map(d=>getAvg(d,'sit_ups_1m')), borderColor: '#f59e0b' },
                     { label: '柔軟度', data: datesForChart.map(d=>getAvg(d,'flexibility')), borderColor: '#06b6d4' }
                 ];
+
                 return (
                     <div className="space-y-6 animate-fade-in pb-12">
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -410,6 +426,7 @@
                                 <div className="text-center p-3 bg-gray-50 rounded"><p className="text-gray-500 text-sm">總評估人數</p><p className="text-2xl font-bold">{totalPeople} 人</p></div>
                                 <div className="text-center p-3 bg-gray-50 rounded"><p className="text-gray-500 text-sm">男女比例</p><p className="text-2xl font-bold text-blue-600">{males} : <span className="text-pink-500">{totalPeople-males}</span></p></div>
                                 <div className="text-center p-3 bg-gray-50 rounded"><p className="text-gray-500 text-sm">平均年齡</p><p className="text-2xl font-bold">{avgAge} 歲</p></div>
+                                
                                 <div className="text-center p-3 bg-gray-50 rounded relative dropdown group cursor-pointer">
                                     <p className="text-gray-500 text-sm mb-1">評估日期篩選 (可複選) ▾</p>
                                     <div className="font-bold text-lg text-blue-600">{selectedDates.length} 個</div>
@@ -435,6 +452,7 @@
                                 ))}
                             </div>
                         </div>
+
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <InteractiveChart title="身體素質平均分析" datasets={bodyDatasets} labels={datesForChart} />
                             <InteractiveChart title="體能表現平均分析" datasets={fitnessDatasets} labels={datesForChart} />
@@ -443,54 +461,114 @@
                 );
             };
 
+            // --- Page 2: 個案報告 (保持不變) ---
             const IndividualReportView = () => {
+                // Unique People Selector Logic
                 const uniquePeople = useMemo(() => {
                     const map = new Map();
                     data.forEach(d => {
-                        const key = `${d.name}_${d.dob}`;
+                        const key = `${d.name}_${d.dob}`; // Unique ID Key
                         if (!map.has(key)) map.set(key, d);
                     });
                     return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
                 }, [data]);
-                const [selKey, setSelKey] = useState("");
+
+                const [selKey, setSelKey] = useState(""); // Stores name_dob
                 const [selDate, setSelDate] = useState("");
-                useEffect(() => { if (uniquePeople.length > 0 && !selKey) setSelKey(`${uniquePeople[0].name}_${uniquePeople[0].dob}`); }, [uniquePeople]);
+
+                useEffect(() => {
+                    if (uniquePeople.length > 0 && !selKey) {
+                        setSelKey(`${uniquePeople[0].name}_${uniquePeople[0].dob}`);
+                    }
+                }, [uniquePeople]);
+
+                // Filter records by Name AND DOB
                 const personRecords = useMemo(() => {
                     if (!selKey) return [];
                     const [n, d] = selKey.split('_');
                     return data.filter(r => r.name === n && r.dob === d).sort((a,b) => new Date(a.date) - new Date(b.date));
                 }, [selKey, data]);
+
                 const availableDates = personRecords.map(r => r.date);
                 useEffect(() => { if(availableDates.length > 0 && !availableDates.includes(selDate)) setSelDate(availableDates[availableDates.length-1]); }, [selKey, personRecords]);
+
                 const current = personRecords.find(r => r.date === selDate) || {};
+
                 const radarScores = current.id ? [
                     normalizeScore(current.bmi, 22, 'lower_better'), normalizeScore(current.smi, 7.0, 'higher_better'),
                     normalizeScore(current.walk_6m, current.predicted_walk_6m, 'higher_better'), normalizeScore(current.sit_stand_30s, 15, 'higher_better'),
                     normalizeScore(current.flexibility, 30, 'higher_better'), normalizeScore(current.sit_ups_1m, 25, 'higher_better'),
                 ] : [0,0,0,0,0,0];
+                
                 const fitnessScore = (radarScores[2] + radarScores[3] + radarScores[4] + radarScores[5]) / 4;
                 const bodyScore = (radarScores[0] + radarScores[1]) / 2;
                 const compositeScore = Math.round(fitnessScore * 0.6 + bodyScore * 0.4);
+                
                 const radarData = { labels: ['BMI', 'SMI', '心肺', '下肢', '柔軟度', '核心'], datasets: [{ label: '分數', data: radarScores, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] };
+
                 const sitStandStd = getStandard('sit_stand', current.sit_stand_30s, current.sex, current.age);
                 const flexStd = getStandard('flexibility', current.flexibility, current.sex, current.age);
                 const sitUpsStd = getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age);
                 const walkStd = current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'};
-                const otAnalysis = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強'; // 簡化展示
+
+                // OT 綜合評語生成
+                const generateAnalysis = () => {
+                    const statusText = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強';
+                    const bmiAnalysis = current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準";
+                    const muscleText = current.smi < 7 ? "肌肉量明顯不足，伴隨肌少症風險" : "肌肉量維持在良好水平";
+                    
+                    return `【綜合功能分析】
+經由本次專業職能治療體適能評估，${current.name}學員的整體體適能評分為 ${compositeScore} 分，整體表現屬於${statusText}。
+在身體組成方面，您的BMI指數顯示體重${bmiAnalysis}，這直接影響身體的代謝負擔；而骨骼肌指數(SMI)顯示${muscleText}，這對於維持基礎代謝率及日常活動的抗疲勞能力至關重要。
+
+在功能性體能方面，六分鐘行走測試反映了您的心肺耐力，目前的表現${current.walk_6m < current.predicted_walk_6m ? "低於預測值，顯示有氧能力稍弱，容易在長距離移動或爬坡時感到氣喘與疲累" : "優於預測值，顯示具備良好的心肺循環效率，能應付較高強度的活動"}。30秒坐站測試則反映下肢肌力，${sitStandStd.status.includes('低於') ? "目前次數偏低，顯示下肢爆發力不足，未來可能增加跌倒風險或影響如廁起身" : "目前表現穩定，顯示下肢功能足以應付日常生活轉位需求"}。此外，柔軟度測試結果顯示${flexStd.status.includes('差') || flexStd.status.includes('不好') ? "關節活動度受限，長期可能導致姿勢不良或肌肉痠痛" : "關節活動範圍良好，有助於動作的流暢性"}。
+
+【治療師建議】
+針對上述評估結果，建議您設定短期目標為提升${current.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${current.walk_6m < current.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
+                };
+                const otAnalysis = generateAnalysis();
+
                 const downloadPDF = () => {
                     const el = document.getElementById('report-container');
-                    const opt = { margin: 5, filename: `${current.name}_完整報告.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 4, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+                    const opt = {
+                        margin: 5,
+                        filename: `${current.name}_${selDate}_完整報告.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 4, useCORS: true }, 
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                    };
                     html2pdf().from(el).set(opt).save();
                 };
+
                 const dates = personRecords.map(r=>r.date);
+                const chartGroup1 = [
+                    { label: '體重', data: personRecords.map(r=>r.weight), borderColor: '#ef4444' },
+                    { label: '體脂率', data: personRecords.map(r=>r.body_fat), borderColor: '#f59e0b' },
+                    { label: '骨骼肌', data: personRecords.map(r=>r.muscle_percent), borderColor: '#10b981' }
+                ];
+                const chartGroup2 = [
+                    { label: '內臟脂肪', data: personRecords.map(r=>r.visceral_fat), borderColor: '#2563eb' },
+                    { label: '柔軟度', data: personRecords.map(r=>r.flexibility), borderColor: '#06b6d4' }
+                ];
+                const chartGroup3 = [
+                    { label: '30秒坐站', data: personRecords.map(r=>r.sit_stand_30s), borderColor: '#ec4899' },
+                    { label: '仰臥起坐', data: personRecords.map(r=>r.sit_ups_1m), borderColor: '#f59e0b' }
+                ];
+                const chartGroup4 = [
+                    { label: '6分鐘行走', data: personRecords.map(r=>r.walk_6m), borderColor: '#8b5cf6' }
+                ];
+
                 if(!current.id) return <div className="p-10 text-center">請先匯入資料</div>;
+
                 return (
                     <div className="pb-10">
                         <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-wrap gap-4 items-center justify-between no-print">
                             <div className="flex gap-4 items-center">
                                 <label className="font-bold">學員: 
                                     <select className="border rounded p-1" value={selKey} onChange={e => setSelKey(e.target.value)}>
-                                        {uniquePeople.map(p => <option key={`${p.name}_${p.dob}`} value={`${p.name}_${p.dob}`}>{p.name} ({p.dob})</option>)}
+                                        {uniquePeople.map(p => (
+                                            <option key={`${p.name}_${p.dob}`} value={`${p.name}_${p.dob}`}>{p.name} ({p.dob})</option>
+                                        ))}
                                     </select>
                                 </label>
                                 <label className="font-bold">日期: 
@@ -501,7 +579,9 @@
                             </div>
                             <button onClick={downloadPDF} className="bg-blue-600 text-white px-4 py-2 rounded shadow"><i className="fas fa-print mr-2"></i>下載/列印</button>
                         </div>
+
                         <div id="report-container" className="max-w-[210mm] mx-auto bg-white shadow-lg">
+                            {/* Page 1 */}
                             <div className="pdf-page p-8 flex flex-col items-stretch">
                                 <div className="border-b-4 border-blue-600 pb-2 mb-2 text-center">
                                     <h1 className="text-3xl font-bold text-gray-800">體適能評估與介入建議書</h1>
@@ -513,36 +593,95 @@
                                     <div><p className="text-gray-500 text-xs">性別/年齡</p><b>{current.sex} / {current.age}歲</b></div>
                                     <div><p className="text-gray-500 text-xs">出生年月日</p><b>{current.dob||"未填"}</b></div>
                                 </div>
+
                                 <div className="grid grid-cols-2 gap-4 mb-2 flex-grow items-stretch">
+                                    {/* 左欄：身體素質 + 綜合分數/雷達圖 */}
                                     <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                         <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">身體素質表現</h3>
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                            <thead className="bg-gray-100"><tr><th className="border p-1">項目</th><th className="border p-1">數值</th><th className="border p-1">標準</th></tr></thead>
+                                            <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">標準/評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1">BMI</td><td className="border p-1">{current.bmi}</td><td className="border p-1">{current.bmi_status}</td></tr>
-                                                <tr><td className="border p-1">骨骼肌(%)</td><td className="border p-1">{current.muscle_percent}%</td><td className="border p-1">{current.muscle_status}</td></tr>
-                                                <tr><td className="border p-1">SMI</td><td className="border p-1">{current.smi}</td><td className="border p-1">{current.sarcopenia_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{current.height.toFixed(1)} / {current.weight.toFixed(1)}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{current.bmi.toFixed(1)}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.bmi_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{current.body_fat.toFixed(1)}%</td><td className="border p-1 whitespace-nowrap">{current.body_fat_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{current.muscle_percent.toFixed(1)}%</td><td className="border p-1 whitespace-nowrap">{current.muscle_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{current.smi.toFixed(1)}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.sarcopenia_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{current.visceral_fat.toFixed(1)}</td><td className="border p-1 whitespace-nowrap text-red-500">{current.visceral_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{current.body_age||"-"}</td><td className="border p-1 whitespace-nowrap">{current.body_age ? (current.body_age > current.age ? `+${current.body_age-current.age} (老化)` : `-${current.age-current.body_age} (年輕)`) : "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{current.bmr ? Number(current.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.bmr_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">腰圍/臀圍</td><td className="border p-1 whitespace-nowrap">{current.waist ? Number(current.waist).toFixed(1) : "-"}/{current.hip ? Number(current.hip).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">cm</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{current.whr.toFixed(1)}</td><td className="border p-1 whitespace-nowrap">{current.whr_status} (標準: {current.sex==='男'?'<0.92':'<0.88'})</td></tr>
                                             </tbody>
                                         </table>
-                                        <div className="mt-1 flex-grow flex flex-col items-center justify-center border rounded p-2 relative">
-                                            <Radar data={radarData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-                                            <div className="text-4xl font-bold text-blue-600 text-center">{compositeScore}</div>
+                                        
+                                        <div className="mt-1 flex-grow flex flex-col items-center justify-center border rounded p-2 relative h-full">
+                                            <div className="w-full flex-grow relative min-h-[150px]"><Radar data={radarData} options={{ maintainAspectRatio: false, scales: { r: { min: 0, max: 120, ticks: { display: false } } }, plugins: { legend: { display: false } } }} /></div>
+                                            <div className="absolute bottom-1 bg-white/80 px-2 rounded">
+                                                <div className="text-xs text-gray-500 text-center">綜合體適能分數</div>
+                                                <div className="text-4xl font-bold text-blue-600 text-center">{compositeScore}</div>
+                                            </div>
                                         </div>
                                     </div>
+                                    
+                                    {/* 右欄：體能表現 + OT評語 */}
                                     <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                         <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">體能表現評估</h3>
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                            <thead className="bg-gray-100"><tr><th className="border p-1">項目</th><th className="border p-1">數值</th><th className="border p-1">評語</th></tr></thead>
+                                            <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1">30秒坐站</td><td className="border p-1">{current.sit_stand_30s}次</td><td className={sitStandStd.color}>{sitStandStd.status}</td></tr>
-                                                <tr><td className="border p-1">6分鐘行走</td><td className="border p-1">{current.walk_6m}m</td><td className={walkStd.c}>{walkStd.s}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.sit_stand_30s).toFixed(1)} 次</td><td className={`border p-1 whitespace-nowrap ${sitStandStd.color}`}>{sitStandStd.status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.walk_6m).toFixed(1)} m</td><td className={`border p-1 whitespace-nowrap ${walkStd.c}`}>{walkStd.s}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.flexibility).toFixed(1)} cm</td><td className={`border p-1 whitespace-nowrap ${flexStd.color}`}>{flexStd.status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.sit_ups_1m).toFixed(1)} 次</td><td className={`border p-1 whitespace-nowrap ${sitUpsStd.color}`}>{sitUpsStd.status}</td></tr>
                                             </tbody>
                                         </table>
-                                        <div className="mt-auto bg-orange-50 p-2 rounded flex-grow text-[11px]">
-                                            <h4 className="font-bold text-orange-800 mb-1 border-b">OT 綜合建議</h4>
-                                            <p>整體表現：{otAnalysis}</p>
+                                        
+                                        <div className="mt-auto bg-orange-50 p-2 rounded flex-grow flex flex-col text-xs leading-relaxed border border-orange-100">
+                                            <h4 className="font-bold text-orange-800 mb-1 border-b border-orange-200 pb-1 text-base"><i className="fas fa-user-md mr-1"></i>OT 綜合評語與建議</h4>
+                                            
+                                            <div className="mb-2 text-justify whitespace-pre-line leading-snug flex-grow text-[11px]">
+                                                {otAnalysis}
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-1.5 mt-1">
+                                                <div className="bg-white p-1.5 rounded border border-green-200">
+                                                    <strong className="text-green-700 flex items-center mb-1 text-sm justify-between">
+                                                        <span><i className="fas fa-dumbbell mr-1"></i>運動處方</span>
+                                                        <span className="text-[10px] bg-green-100 px-1 rounded">頻率: 每週3次</span>
+                                                    </strong>
+                                                    <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                        {current.sarcopenia_status === '肌少症' && <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li>}
+                                                        {current.walk_6m < current.predicted_walk_6m && <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
+                                                        {current.flexibility < 20 && <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
+                                                        {!['肌少症'].includes(current.sarcopenia_status) && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
+                                                        <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
+                                                    </ul>
+                                                </div>
+                                                <div className="bg-white p-1.5 rounded border border-red-200">
+                                                    <strong className="text-red-700 flex items-center mb-1 text-sm"><i className="fas fa-utensils mr-1"></i>營養建議</strong>
+                                                    <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                        {current.bmi > 24 && <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
+                                                        {(current.smi < 7) ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
+                                                        <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Page 2 */}
+                            <div className="pdf-page p-8 relative">
+                                <div className="border-b-4 border-gray-600 pb-4 mb-6 text-center">
+                                    <h1 className="text-3xl font-bold text-gray-800">歷程追蹤分析報告</h1>
+                                    <p className="text-gray-500 mt-2">學員: {current.name} ( {personRecords[0].date} ~ {personRecords[personRecords.length-1].date} )</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-6 h-[800px]">
+                                    <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={chartGroup1} labels={dates} initialSelected={['體重', '骨骼肌']} />
+                                    <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={chartGroup2} labels={dates} initialSelected={['內臟脂肪']} />
+                                    <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={chartGroup3} labels={dates} />
+                                    <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={chartGroup4} labels={dates} />
                                 </div>
                             </div>
                         </div>
@@ -550,24 +689,48 @@
                 );
             };
 
+            // --- Page 3: 資料輸入 (保持不變) ---
             const DataEntryView = () => {
                 const [form, setForm] = useState({ 
                     date: new Date().toISOString().split('T')[0], bed_number: '', name: '', 
-                    dob: '', age: '', sex: '男', height: '', weight: '', waist: '', hip: '', 
+                    dob: '', age: '', sex: '男',
+                    height: '', weight: '', waist: '', hip: '', 
                     body_fat: '', muscle_percent: '', visceral_fat: '', body_age: '', bmr: '',
                     sit_stand_30s: '', walk_6m: '', flexibility: '', sit_ups_1m: '' 
                 });
+
                 const handleChange = (e) => {
                     const { name, value } = e.target;
                     let newForm = { ...form, [name]: value };
                     if (name === 'dob') newForm.age = calcAge(value);
                     setForm(newForm);
                 };
-                const handleSubmit = (e) => {
+
+                const handleSubmit = async (e) => {
                     e.preventDefault();
-                    setData(prev => [...prev, ...processData([{...form, id: Date.now(), age: parseInt(form.age)}])]);
-                    alert("新增成功");
+                    
+                    const newData = {
+                        ...form, session: 1,
+                        height: parseFloat(form.height), weight: parseFloat(form.weight),
+                        waist: parseFloat(form.waist), hip: parseFloat(form.hip),
+                        body_fat: parseFloat(form.body_fat), muscle_percent: parseFloat(form.muscle_percent),
+                        visceral_fat: parseFloat(form.visceral_fat), body_age: parseFloat(form.body_age), bmr: parseFloat(form.bmr),
+                        sit_stand_30s: parseFloat(form.sit_stand_30s), walk_6m: parseFloat(form.walk_6m),
+                        flexibility: parseFloat(form.flexibility), sit_ups_1m: parseFloat(form.sit_ups_1m),
+                        age: parseInt(form.age)
+                    };
+                    
+                    // 呼叫 GAS API 儲存
+                    const success = await saveDataToGAS(newData);
+                    
+                    if (success) {
+                        // 儲存成功後更新本地資料
+                        setData(prev => [...prev, ...processData([newData])]);
+                        alert("新增成功！資料已同步至雲端。");
+                        setForm({ ...form, name: '', bed_number: '' });
+                    }
                 };
+
                 return (
                     <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -578,18 +741,80 @@
                             </label>
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <label className="block text-sm">姓名 <input required name="name" value={form.name} onChange={handleChange} className="w-full border p-2 rounded" /></label>
-                                <label className="block text-sm">床號 <input name="bed_number" value={form.bed_number} onChange={handleChange} className="w-full border p-2 rounded" /></label>
-                                <label className="block text-sm">身高 <input required type="number" name="height" value={form.height} onChange={handleChange} className="w-full border p-2 rounded" /></label>
-                                <label className="block text-sm">體重 <input required type="number" name="weight" value={form.weight} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-blue-800 border-l-4 border-blue-600 pl-2">1. 基本資料</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <label className="block text-sm">評估日期 <input required type="date" name="date" value={form.date} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">床號 <input type="text" name="bed_number" value={form.bed_number} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">姓名 <input required type="text" name="name" value={form.name} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">性別 <select name="sex" value={form.sex} onChange={handleChange} className="w-full border p-2 rounded"><option>男</option><option>女</option></select></label>
+                                    <label className="block text-sm">出生年月日 <input required type="date" name="dob" value={form.dob} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">年齡 (自動) <input type="number" readOnly name="age" value={form.age} className="w-full border p-2 rounded bg-gray-100" /></label>
+                                </div>
                             </div>
-                            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow">新增一筆資料</button>
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-blue-800 border-l-4 border-blue-600 pl-2">2. 身體素質</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                    <label className="block text-sm">身高 (cm) <input required type="number" name="height" value={form.height} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">體重 (kg) <input required type="number" name="weight" value={form.weight} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">腰圍 (cm) <input type="number" name="waist" value={form.waist} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">臀圍 (cm) <input type="number" name="hip" value={form.hip} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">體脂率 (%) <input type="number" name="body_fat" value={form.body_fat} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">骨骼肌 (%) <input type="number" name="muscle_percent" value={form.muscle_percent} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">內臟脂肪 <input type="number" name="visceral_fat" value={form.visceral_fat} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">體年齡 <input type="number" name="body_age" value={form.body_age} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">基礎代謝 <input type="number" name="bmr" value={form.bmr} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-blue-800 border-l-4 border-blue-600 pl-2">3. 體能表現</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <label className="block text-sm">30秒坐站 (次) <input type="number" name="sit_stand_30s" value={form.sit_stand_30s} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">6分鐘行走 (m) <input type="number" name="walk_6m" value={form.walk_6m} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">柔軟度 (cm) <input type="number" name="flexibility" value={form.flexibility} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">仰臥起坐 (次) <input type="number" name="sit_ups_1m" value={form.sit_ups_1m} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                </div>
+                            </div>
+                            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow">新增並上傳雲端</button>
                         </form>
                     </div>
                 );
             };
 
+            // 如果尚未登入，顯示登入畫面
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-gray-200">
+                            <div className="text-center mb-6">
+                                <i className="fas fa-heartbeat text-red-400 text-5xl mb-4"></i>
+                                <h2 className="text-xl font-bold text-gray-800">職能治療運動追蹤系統</h2>
+                                <p className="text-gray-500 text-sm mt-1">請輸入密碼以存取資料</p>
+                            </div>
+                            <form onSubmit={handleLogin}>
+                                <div className="mb-4">
+                                    <input 
+                                        type="password" 
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="" 
+                                    />
+                                </div>
+                                <button 
+                                    type="submit" 
+                                    disabled={isLoggingIn}
+                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow transition flex justify-center items-center"
+                                >
+                                    {isLoggingIn ? <><i className="fas fa-spinner fa-spin mr-2"></i>登入中...</> : "登入系統"}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 登入後顯示主畫面
             return (
                 <div className="min-h-screen pb-10">
                     <nav className="bg-slate-800 text-white shadow-lg sticky top-0 z-50 no-print">
@@ -603,7 +828,7 @@
                         </div>
                     </nav>
                     <main className="container mx-auto mt-8 px-4">
-                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-spinner fa-spin text-4xl mb-4"></i><p>資料初始化中...</p></div> : 
+                        {data.length === 0 ? <div className="text-center py-20 text-gray-500"><i className="fas fa-spinner fa-spin text-4xl mb-4"></i><p>資料讀取中...</p></div> : 
                             currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView />
                         }
                     </main>
@@ -612,7 +837,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<LoginWrapper />); // 入口點改為 LoginWrapper
+        root.render(<Dashboard />);
     </script>
 </body>
 </html>
