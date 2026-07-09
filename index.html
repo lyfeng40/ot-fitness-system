@@ -129,10 +129,106 @@
         };
 
         // --- 邏輯與標準 ---
-        const calcAge = (dob) => { if(!dob) return 0; const d = new Date(dob); return new Date().getFullYear() - d.getFullYear(); };
-        const calcBMI = (h, w) => (!h || !w) ? 0 : w / Math.pow(h / 100, 2);
-        const calcSMI = (h, w, mp) => (!h || !w || !mp) ? 0 : (w * mp / 100) / Math.pow(h / 100, 2);
-        const calc6MWTPredicted = (sex, age, h, w) => (sex === "女") ? 2.11*h - 2.29*w - 5.78*age + 667 : 7.57*h - 1.76*w - 5.02*age - 309;
+        const formatDateSafe = (dateVal) => {
+            if (!dateVal) return "";
+            
+            // If it is a Date object
+            if (dateVal instanceof Date) {
+                if (isNaN(dateVal.getTime())) return "";
+                const yyyy = dateVal.getFullYear();
+                const mm = String(dateVal.getMonth() + 1).padStart(2, '0');
+                const dd = String(dateVal.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+
+            // Convert to string and trim
+            let str = String(dateVal).trim();
+            if (!str) return "";
+
+            // If it is a timestamp / serialized date from Excel/Google Sheets (numeric)
+            if (/^\d+(\.\d+)?$/.test(str)) {
+                const num = parseFloat(str);
+                // Excel base date is 1899-12-30
+                if (num > 20000 && num < 60000) {
+                    const date = new Date((num - 25569) * 86400 * 1000);
+                    const yyyy = date.getFullYear();
+                    const mm = String(date.getMonth() + 1).padStart(2, '0');
+                    const dd = String(date.getDate()).padStart(2, '0');
+                    return `${yyyy}-${mm}-${dd}`;
+                }
+                // If it looks like a millisecond timestamp
+                if (num > 1000000000000) {
+                    const date = new Date(num);
+                    const yyyy = date.getFullYear();
+                    const mm = String(date.getMonth() + 1).padStart(2, '0');
+                    const dd = String(date.getDate()).padStart(2, '0');
+                    return `${yyyy}-${mm}-${dd}`;
+                }
+            }
+
+            // Replace all dots, slashes, or backslashes with dashes
+            str = str.replace(/[./\\]/g, '-');
+
+            // Match YYYY-MM-DD
+            const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (match) {
+                const yyyy = match[1];
+                const mm = match[2].padStart(2, '0');
+                const dd = match[3].padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+
+            // Try standard JS Date parsing but format it locally
+            const parsed = new Date(dateVal);
+            if (!isNaN(parsed.getTime())) {
+                const yyyy = parsed.getFullYear();
+                const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                const dd = String(parsed.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+
+            return "";
+        };
+
+        const mapRowToData = (row) => ({
+            id: row['唯一識別碼'] || '',
+            bed_number: row['床號'] || '',
+            name: row['姓名'] || '',
+            sex: row['性別'] || '男',
+            dob: formatDateSafe(row['出生年月日']),
+            age: (row['年齡'] !== undefined && row['年齡'] !== null && row['年齡'] !== '') ? Number(row['年齡']) : '',
+            session: row['評估次別'] || 1,
+            date: formatDateSafe(row['評估日期']),
+            height: (row['身高(cm)'] !== undefined && row['身高(cm)'] !== null && row['身高(cm)'] !== '') ? Number(row['身高(cm)']) : '',
+            weight: (row['體重(kg)'] !== undefined && row['體重(kg)'] !== null && row['體重(kg)'] !== '') ? Number(row['體重(kg)']) : '',
+            bmi: (row['BMI'] !== undefined && row['BMI'] !== null && row['BMI'] !== '') ? Number(row['BMI']) : '',
+            body_fat: (row['體脂肪(%)'] !== undefined && row['體脂肪(%)'] !== null && row['體脂肪(%)'] !== '') ? Number(row['體脂肪(%)']) : '',
+            muscle_percent: (row['骨骼肌(%)'] !== undefined && row['骨骼肌(%)'] !== null && row['骨骼肌(%)'] !== '') ? Number(row['骨骼肌(%)']) : '',
+            visceral_fat: (row['內臟脂肪'] !== undefined && row['內臟脂肪'] !== null && row['內臟脂肪'] !== '') ? Number(row['內臟脂肪']) : '',
+            smi: (row['SMI'] !== undefined && row['SMI'] !== null && row['SMI'] !== '') ? Number(row['SMI']) : '',
+            bmr: (row['基礎代謝(kcal)'] !== undefined && row['基礎代謝(kcal)'] !== null && row['基礎代謝(kcal)'] !== '') ? Number(row['基礎代謝(kcal)']) : '',
+            body_age: (row['體年齡'] !== undefined && row['體年齡'] !== null && row['體年齡'] !== '') ? Number(row['體年齡']) : '',
+            waist: (row['腰圍(cm)'] !== undefined && row['腰圍(cm)'] !== null && row['腰圍(cm)'] !== '') ? Number(row['腰圍(cm)']) : '',
+            hip: (row['臀圍(cm)'] !== undefined && row['臀圍(cm)'] !== null && row['臀圍(cm)'] !== '') ? Number(row['臀圍(cm)']) : '',
+            whr: (row['腰臀比'] !== undefined && row['腰臀比'] !== null && row['腰臀比'] !== '') ? Number(row['腰臀比']) : '',
+            sit_ups_1m: (row['一分鐘仰臥起坐(次)'] !== undefined && row['一分鐘仰臥起坐(次)'] !== null && row['一分鐘仰臥起坐(次)'] !== '') ? Number(row['一分鐘仰臥起坐(次)']) : '',
+            walk_6m: (row['六分鐘行走測驗(m)'] !== undefined && row['六分鐘行走測驗(m)'] !== null && row['六分鐘行走測驗(m)'] !== '') ? Number(row['六分鐘行走測驗(m)']) : '',
+            flexibility: (row['柔軟度(cm)'] !== undefined && row['柔軟度(cm)'] !== null && row['柔軟度(cm)'] !== '') ? Number(row['柔軟度(cm)']) : '',
+            sit_stand_30s: (row['30秒坐站測驗(次)'] !== undefined && row['30秒坐站測驗(次)'] !== null && row['30秒坐站測驗(次)'] !== '') ? Number(row['30秒坐站測驗(次)']) : ''
+        });
+
+        const calcAge = (dob) => { 
+            if(!dob) return ""; 
+            const d = new Date(dob); 
+            if (isNaN(d.getTime())) return "";
+            return new Date().getFullYear() - d.getFullYear(); 
+        };
+        const calcBMI = (h, w) => (!h || !w || isNaN(h) || isNaN(w)) ? "" : w / Math.pow(h / 100, 2);
+        const calcSMI = (h, w, mp) => (!h || !w || !mp || isNaN(h) || isNaN(w) || isNaN(mp)) ? "" : (w * mp / 100) / Math.pow(h / 100, 2);
+        const calc6MWTPredicted = (sex, age, h, w) => {
+            if (!sex || !age || !h || !w) return "";
+            return (sex === "女") ? 2.11*h - 2.29*w - 5.78*age + 667 : 7.57*h - 1.76*w - 5.02*age - 309;
+        };
         
         // 評語標準邏輯
         const getBodyFatStatus = (sex, val) => {
@@ -235,23 +331,23 @@
                 return rawData.map(row => {
                     const bmi = calcBMI(row.height, row.weight);
                     const smi = calcSMI(row.height, row.weight, row.muscle_percent);
-                    const whr = (row.waist && row.hip) ? row.waist / row.hip : 0;
-                    const predicted6m = calc6MWTPredicted(row.sex, row.age, row.height, row.weight);
-                    const bmrTarget = getBMRTarget(row.sex, row.age);
-                    const bmrStatus = (row.bmr < bmrTarget * 0.9) ? "偏低" : (row.bmr > bmrTarget * 1.1) ? "偏高" : "標準";
+                    const whr = (row.waist && row.hip) ? row.waist / row.hip : '';
+                    const predicted6m = (row.height && row.weight && row.age) ? calc6MWTPredicted(row.sex, row.age, row.height, row.weight) : '';
+                    const bmrTarget = row.age ? getBMRTarget(row.sex, row.age) : '';
+                    const bmrStatus = (row.bmr && bmrTarget) ? ((row.bmr < bmrTarget * 0.9) ? "偏低" : (row.bmr > bmrTarget * 1.1) ? "偏高" : "標準") : "-";
 
                     return {
                         ...row,
-                        bmi: parseFloat(bmi.toFixed(1)),
-                        smi: parseFloat(smi.toFixed(1)),
-                        whr: parseFloat(whr.toFixed(1)),
-                        predicted_walk_6m: parseFloat(predicted6m.toFixed(0)),
-                        bmi_status: getBMIStatus(bmi),
-                        sarcopenia_status: getSarcopeniaStatus(row.sex, smi),
-                        visceral_status: getVisceralFatStatus(row.visceral_fat),
-                        body_fat_status: getBodyFatStatus(row.sex, row.body_fat),
-                        muscle_status: getMuscleStatus(row.sex, row.muscle_percent),
-                        whr_status: getWHRStatus(row.sex, whr),
+                        bmi: bmi !== '' ? parseFloat(bmi.toFixed(1)) : '',
+                        smi: smi !== '' ? parseFloat(smi.toFixed(1)) : '',
+                        whr: whr !== '' ? parseFloat(whr.toFixed(2)) : '',
+                        predicted_walk_6m: predicted6m !== '' ? parseFloat(predicted6m.toFixed(0)) : '',
+                        bmi_status: bmi !== '' ? getBMIStatus(bmi) : '-',
+                        sarcopenia_status: smi !== '' ? getSarcopeniaStatus(row.sex, smi) : '-',
+                        visceral_status: row.visceral_fat !== '' ? getVisceralFatStatus(row.visceral_fat) : '-',
+                        body_fat_status: (row.sex && row.body_fat !== '') ? getBodyFatStatus(row.sex, row.body_fat) : '-',
+                        muscle_status: (row.sex && row.muscle_percent !== '') ? getMuscleStatus(row.sex, row.muscle_percent) : '-',
+                        whr_status: (row.sex && whr !== '') ? getWHRStatus(row.sex, whr) : '-',
                         bmr_status: bmrStatus
                     };
                 });
@@ -267,32 +363,7 @@
                     
                     if (json.status === 'success') {
                         // 將 GAS 回傳的資料對應回前端欄位
-                        const sheetData = json.data.map(row => ({
-                            id: row['唯一識別碼'],
-                            bed_number: row['床號'],
-                            name: row['姓名'],
-                            sex: row['性別'],
-                            dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
-                            age: Number(row['年齡']),
-                            session: row['評估次別'],
-                            date: row['評估日期'] ? new Date(row['評估日期']).toISOString().split('T')[0] : "",
-                            height: Number(row['身高(cm)']),
-                            weight: Number(row['體重(kg)']),
-                            bmi: Number(row['BMI']),
-                            body_fat: Number(row['體脂肪(%)']),
-                            muscle_percent: Number(row['骨骼肌(%)']),
-                            visceral_fat: Number(row['內臟脂肪']),
-                            smi: Number(row['SMI']),
-                            bmr: Number(row['基礎代謝(kcal)']),
-                            body_age: Number(row['體年齡']),
-                            waist: Number(row['腰圍(cm)']),
-                            hip: Number(row['臀圍(cm)']),
-                            whr: Number(row['腰臀比']),
-                            sit_ups_1m: Number(row['一分鐘仰臥起坐(次)']),
-                            walk_6m: Number(row['六分鐘行走測驗(m)']),
-                            flexibility: Number(row['柔軟度(cm)']),
-                            sit_stand_30s: Number(row['30秒坐站測驗(次)'])
-                        }));
+                        const sheetData = json.data.map(row => mapRowToData(row));
                         setData(processData(sheetData));
                     } else {
                         console.error("API Error: " + json.message);
@@ -324,17 +395,18 @@
                 const latestRecords = Array.from(latestMap.values());
                 const totalPeople = latestRecords.length;
                 const males = latestRecords.filter(d => d.sex === '男').length;
-                const avgAge = totalPeople ? (latestRecords.reduce((a,b) => a + b.age, 0) / totalPeople).toFixed(1) : 0;
+                const recordsWithAge = latestRecords.filter(d => typeof d.age === 'number' && d.age !== '');
+                const avgAge = recordsWithAge.length ? (recordsWithAge.reduce((a,b) => a + b.age, 0) / recordsWithAge.length).toFixed(1) : 0;
                 
                 const riskSarcopenia = latestRecords.filter(d => d.sarcopenia_status === '肌少症').length;
                 const riskVisceral = latestRecords.filter(d => d.visceral_status !== '標準').length;
                 const riskObesity = latestRecords.filter(d => ['中度肥胖', '重度肥胖', '過重'].includes(d.bmi_status)).length;
-                const riskFlexibility = latestRecords.filter(d => d.flexibility < 20).length;
+                const riskFlexibility = latestRecords.filter(d => typeof d.flexibility === 'number' && d.flexibility !== '' && d.flexibility < 20).length;
 
                 const datesForChart = selectedDates.length > 0 ? selectedDates.sort() : allDates;
                 const getAvg = (date, field) => {
-                    const dayData = data.filter(d => d.date === date);
-                    return dayData.length ? parseFloat((dayData.reduce((a,b)=>a+(b[field]||0),0)/dayData.length).toFixed(1)) : 0;
+                    const dayData = data.filter(d => d.date === date && typeof d[field] === 'number' && d[field] !== '');
+                    return dayData.length ? parseFloat((dayData.reduce((a,b)=>a+b[field],0)/dayData.length).toFixed(1)) : null;
                 };
 
                 const bodyDatasets = [
@@ -397,14 +469,38 @@
 
             // --- Page 2: 個案報告 ---
             const IndividualReportView = () => {
+                // Pre-process data to resolve empty DOBs
+                const normalizedData = useMemo(() => {
+                    // 1. Group all non-empty DOBs by name
+                    const nameToDobs = {};
+                    data.forEach(d => {
+                        if (d.name) {
+                            if (!nameToDobs[d.name]) nameToDobs[d.name] = new Set();
+                            if (d.dob) nameToDobs[d.name].add(d.dob);
+                        }
+                    });
+
+                    // 2. Normalize records
+                    return data.map(d => {
+                        let resolvedDob = d.dob;
+                        if (!resolvedDob && d.name) {
+                            const dobs = nameToDobs[d.name];
+                            if (dobs && dobs.size === 1) {
+                                resolvedDob = Array.from(dobs)[0];
+                            }
+                        }
+                        return { ...d, dob: resolvedDob };
+                    });
+                }, [data]);
+
                 const uniquePeople = useMemo(() => {
                     const map = new Map();
-                    data.forEach(d => {
+                    normalizedData.forEach(d => {
                         const key = `${d.name}_${d.dob}`;
                         if (!map.has(key)) map.set(key, d);
                     });
                     return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
-                }, [data]);
+                }, [normalizedData]);
 
                 const [selKey, setSelKey] = useState("");
                 const [selDate, setSelDate] = useState("");
@@ -418,8 +514,9 @@
                 const personRecords = useMemo(() => {
                     if (!selKey) return [];
                     const [n, d] = selKey.split('_');
-                    return data.filter(r => r.name === n && r.dob === d).sort((a,b) => new Date(a.date) - new Date(b.date));
-                }, [selKey, data]);
+                    const resolvedD = d === undefined || d === 'undefined' ? '' : d;
+                    return normalizedData.filter(r => r.name === n && (r.dob || '') === resolvedD).sort((a,b) => a.date.localeCompare(b.date));
+                }, [selKey, normalizedData]);
 
                 const availableDates = personRecords.map(r => r.date);
                 useEffect(() => { if(availableDates.length > 0 && !availableDates.includes(selDate)) setSelDate(availableDates[availableDates.length-1]); }, [selKey, personRecords]);
@@ -432,30 +529,44 @@
                     normalizeScore(current.flexibility, 30, 'higher_better'), normalizeScore(current.sit_ups_1m, 25, 'higher_better'),
                 ] : [0,0,0,0,0,0];
                 
-                const fitnessScore = (radarScores[2] + radarScores[3] + radarScores[4] + radarScores[5]) / 4;
-                const bodyScore = (radarScores[0] + radarScores[1]) / 2;
-                const compositeScore = Math.round(fitnessScore * 0.6 + bodyScore * 0.4);
+                const fitnessScores = radarScores.slice(2, 6).filter(s => s > 0);
+                const fitnessScore = fitnessScores.length > 0 ? (fitnessScores.reduce((a, b) => a + b, 0) / fitnessScores.length) : 0;
+                
+                const bodyScores = radarScores.slice(0, 2).filter(s => s > 0);
+                const bodyScore = bodyScores.length > 0 ? (bodyScores.reduce((a, b) => a + b, 0) / bodyScores.length) : 0;
+                
+                let compositeScore = 0;
+                if (fitnessScore > 0 && bodyScore > 0) {
+                    compositeScore = Math.round(fitnessScore * 0.6 + bodyScore * 0.4);
+                } else if (fitnessScore > 0) {
+                    compositeScore = Math.round(fitnessScore);
+                } else if (bodyScore > 0) {
+                    compositeScore = Math.round(bodyScore);
+                }
                 
                 const radarData = { labels: ['BMI', 'SMI', '心肺', '下肢', '柔軟度', '核心'], datasets: [{ label: '分數', data: radarScores, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] };
 
                 const sitStandStd = current.id ? getStandard('sit_stand', current.sit_stand_30s, current.sex, current.age) : {};
                 const flexStd = current.id ? getStandard('flexibility', current.flexibility, current.sex, current.age) : {};
                 const sitUpsStd = current.id ? getStandard('sit_ups', current.sit_ups_1m, current.sex, current.age) : {};
-                const walkStd = current.id ? (current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'}) : {};
+                const walkStd = current.id ? (
+                    (!current.walk_6m || !current.predicted_walk_6m) ? {s: "-", c: ""} :
+                    (current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'})
+                ) : {};
 
                 const generateAnalysis = () => {
                     const statusText = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強';
-                    const bmiAnalysis = current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準";
-                    const muscleText = current.smi < 7 ? "肌肉量明顯不足，伴隨肌少症風險" : "肌肉量維持在良好水平";
+                    const bmiAnalysis = current.bmi !== '' && current.bmi !== undefined ? (current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準") : "未登錄";
+                    const muscleText = current.smi !== '' && current.smi !== undefined ? (current.smi < 7 ? "肌肉量明顯不足，伴隨肌少症風險" : "肌肉量維持在良好水平") : "未登錄";
                     
                     return `【綜合功能分析】
-經由本次專業職能治療體適能評估，${current.name}學員的整體體適能評分為 ${compositeScore} 分，整體表現屬於${statusText}。
+經由本次專業職能治療體適能評估，${current.name}學員的整體體適能評分為 ${compositeScore ? compositeScore + " 分" : "未評分"}，整體表現屬於${compositeScore ? statusText : "待評估"}。
 在身體組成方面，您的BMI指數顯示體重${bmiAnalysis}，這直接影響身體的代謝負擔；而骨骼肌指數(SMI)顯示${muscleText}，這對於維持基礎代謝率及日常活動的抗疲勞能力至關重要。
 
-在功能性體能方面，六分鐘行走測試反映了您的心肺耐力，目前的表現${current.walk_6m < current.predicted_walk_6m ? "低於預測值，顯示有氧能力稍弱，容易在長距離移動或爬坡時感到氣喘與疲累" : "優於預測值，顯示具備良好的心肺循環效率，能應付較高強度的活動"}。30秒坐站測試則反映下肢肌力，${sitStandStd.status.includes('低於') ? "目前次數偏低，顯示下肢爆發力不足，未來可能增加跌倒風險或影響如廁起身" : "目前表現穩定，顯示下肢功能足以應付日常生活轉位需求"}。此外，柔軟度測試結果顯示${flexStd.status.includes('差') || flexStd.status.includes('不好') ? "關節活動度受限，長期可能導致姿勢不良或肌肉痠痛" : "關節活動範圍良好，有助於動作的流暢性"}。
+在功能性體能方面，六分鐘行走測試反映了您的心肺耐力，目前的表現${!current.walk_6m || !current.predicted_walk_6m ? "未測試" : (current.walk_6m < current.predicted_walk_6m ? "低於預測值，顯示有氧能力稍弱，容易在長距離移動或爬坡時感到氣喘與疲累" : "優於預測值，顯示具備良好的心肺循環效率，能應付較高強度的活動")}。30秒坐站測試則反映下肢肌力，${!current.sit_stand_30s ? "未測試" : (sitStandStd.status && sitStandStd.status.includes('低於') ? "目前次數偏低，顯示下肢爆發力不足，未來可能增加跌倒風險或影響如廁起身" : "目前表現穩定，顯示下肢功能足以應付日常生活轉位需求")}。此外，柔軟度測試結果顯示${!current.flexibility ? "未測試" : (flexStd.status && (flexStd.status.includes('差') || flexStd.status.includes('不好')) ? "關節活動度受限，長期可能導致姿勢不良或肌肉痠痛" : "關節活動範圍良好，有助於動作的流暢性")}。
 
 【治療師建議】
-針對上述評估結果，建議您設定短期目標為提升${current.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${current.walk_6m < current.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
+針對上述評估結果，建議您設定短期目標為提升${current.smi && current.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${current.walk_6m && current.predicted_walk_6m && current.walk_6m < current.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
                 };
                 const otAnalysis = current.id ? generateAnalysis() : "";
 
@@ -473,20 +584,20 @@
 
                 const dates = personRecords.map(r=>r.date);
                 const chartGroup1 = [
-                    { label: '體重', data: personRecords.map(r=>r.weight), borderColor: '#ef4444' },
-                    { label: '體脂率', data: personRecords.map(r=>r.body_fat), borderColor: '#f59e0b' },
-                    { label: '骨骼肌', data: personRecords.map(r=>r.muscle_percent), borderColor: '#10b981' }
+                    { label: '體重', data: personRecords.map(r=>r.weight !== '' && r.weight !== undefined ? r.weight : null), borderColor: '#ef4444' },
+                    { label: '體脂率', data: personRecords.map(r=>r.body_fat !== '' && r.body_fat !== undefined ? r.body_fat : null), borderColor: '#f59e0b' },
+                    { label: '骨骼肌', data: personRecords.map(r=>r.muscle_percent !== '' && r.muscle_percent !== undefined ? r.muscle_percent : null), borderColor: '#10b981' }
                 ];
                 const chartGroup2 = [
-                    { label: '內臟脂肪', data: personRecords.map(r=>r.visceral_fat), borderColor: '#2563eb' },
-                    { label: '柔軟度', data: personRecords.map(r=>r.flexibility), borderColor: '#06b6d4' }
+                    { label: '內臟脂肪', data: personRecords.map(r=>r.visceral_fat !== '' && r.visceral_fat !== undefined ? r.visceral_fat : null), borderColor: '#2563eb' },
+                    { label: '柔軟度', data: personRecords.map(r=>r.flexibility !== '' && r.flexibility !== undefined ? r.flexibility : null), borderColor: '#06b6d4' }
                 ];
                 const chartGroup3 = [
-                    { label: '30秒坐站', data: personRecords.map(r=>r.sit_stand_30s), borderColor: '#ec4899' },
-                    { label: '仰臥起坐', data: personRecords.map(r=>r.sit_ups_1m), borderColor: '#f59e0b' }
+                    { label: '30秒坐站', data: personRecords.map(r=>r.sit_stand_30s !== '' && r.sit_stand_30s !== undefined ? r.sit_stand_30s : null), borderColor: '#ec4899' },
+                    { label: '仰臥起坐', data: personRecords.map(r=>r.sit_ups_1m !== '' && r.sit_ups_1m !== undefined ? r.sit_ups_1m : null), borderColor: '#f59e0b' }
                 ];
                 const chartGroup4 = [
-                    { label: '6分鐘行走', data: personRecords.map(r=>r.walk_6m), borderColor: '#8b5cf6' }
+                    { label: '6分鐘行走', data: personRecords.map(r=>r.walk_6m !== '' && r.walk_6m !== undefined ? r.walk_6m : null), borderColor: '#8b5cf6' }
                 ];
 
                 if(!current.id) return <div className="p-10 text-center">請先匯入資料</div>;
@@ -532,16 +643,16 @@
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
                                             <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">標準/評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{current.height.toFixed(1)} / {current.weight.toFixed(1)}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{current.bmi.toFixed(1)}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.bmi_status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{current.body_fat.toFixed(1)}%</td><td className="border p-1 whitespace-nowrap">{current.body_fat_status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{current.muscle_percent.toFixed(1)}%</td><td className="border p-1 whitespace-nowrap">{current.muscle_status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{current.smi.toFixed(1)}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.sarcopenia_status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{current.visceral_fat.toFixed(1)}</td><td className="border p-1 whitespace-nowrap text-red-500">{current.visceral_status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{current.body_age||"-"}</td><td className="border p-1 whitespace-nowrap">{current.body_age ? (current.body_age > current.age ? `+${current.body_age-current.age} (老化)` : `-${current.age-current.body_age} (年輕)`) : "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{current.bmr ? Number(current.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.bmr_status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{(typeof current.height === 'number' && current.height !== '') ? current.height.toFixed(1) : "-"} / {(typeof current.weight === 'number' && current.weight !== '') ? current.weight.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{(typeof current.bmi === 'number' && current.bmi !== '') ? current.bmi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.bmi_status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{(typeof current.body_fat === 'number' && current.body_fat !== '') ? current.body_fat.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{current.body_fat_status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{(typeof current.muscle_percent === 'number' && current.muscle_percent !== '') ? current.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{current.muscle_status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{(typeof current.smi === 'number' && current.smi !== '') ? current.smi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.sarcopenia_status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{(typeof current.visceral_fat === 'number' && current.visceral_fat !== '') ? current.visceral_fat.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap text-red-500">{current.visceral_status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{current.body_age || "-"}</td><td className="border p-1 whitespace-nowrap">{current.body_age && current.age ? (current.body_age > current.age ? `+${current.body_age - current.age} (老化)` : `-${current.age - current.body_age} (年輕)`) : "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{current.bmr ? Number(current.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.bmr_status || "-"}</td></tr>
                                                 <tr><td className="border p-1 whitespace-nowrap">腰圍/臀圍</td><td className="border p-1 whitespace-nowrap">{current.waist ? Number(current.waist).toFixed(1) : "-"}/{current.hip ? Number(current.hip).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">cm</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{current.whr.toFixed(1)}</td><td className="border p-1 whitespace-nowrap">{current.whr_status} (標準: {current.sex==='男'?'<0.92':'<0.88'})</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{(typeof current.whr === 'number' && current.whr !== '') ? current.whr.toFixed(2) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.whr_status || "-"} {current.whr ? `(標準: ${current.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
                                             </tbody>
                                         </table>
                                         
@@ -560,10 +671,10 @@
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
                                             <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.sit_stand_30s).toFixed(1)} 次</td><td className={`border p-1 whitespace-nowrap ${sitStandStd.color}`}>{sitStandStd.status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.walk_6m).toFixed(1)} m</td><td className={`border p-1 whitespace-nowrap ${walkStd.c}`}>{walkStd.s}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.flexibility).toFixed(1)} cm</td><td className={`border p-1 whitespace-nowrap ${flexStd.color}`}>{flexStd.status}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{Number(current.sit_ups_1m).toFixed(1)} 次</td><td className={`border p-1 whitespace-nowrap ${sitUpsStd.color}`}>{sitUpsStd.status}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.sit_stand_30s === 'number' && current.sit_stand_30s !== '') ? current.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${sitStandStd.color || ""}`}>{sitStandStd.status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.walk_6m === 'number' && current.walk_6m !== '') ? current.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border p-1 whitespace-nowrap ${walkStd.c || ""}`}>{walkStd.s || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.flexibility === 'number' && current.flexibility !== '') ? current.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border p-1 whitespace-nowrap ${flexStd.color || ""}`}>{flexStd.status || "-"}</td></tr>
+                                                <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.sit_ups_1m === 'number' && current.sit_ups_1m !== '') ? current.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${sitUpsStd.color || ""}`}>{sitUpsStd.status || "-"}</td></tr>
                                             </tbody>
                                         </table>
                                         
@@ -582,17 +693,17 @@
                                                     </strong>
                                                     <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
                                                         {current.sarcopenia_status === '肌少症' && <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li>}
-                                                        {current.walk_6m < current.predicted_walk_6m && <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
-                                                        {current.flexibility < 20 && <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
-                                                        {!['肌少症'].includes(current.sarcopenia_status) && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
+                                                        {current.walk_6m && current.predicted_walk_6m && current.walk_6m < current.predicted_walk_6m && <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
+                                                        {current.flexibility && current.flexibility < 20 && <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
+                                                        {current.sarcopenia_status && current.sarcopenia_status !== '肌少症' && current.walk_6m && current.predicted_walk_6m && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
                                                         <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
                                                     </ul>
                                                 </div>
                                                 <div className="bg-white p-1.5 rounded border border-red-200">
                                                     <strong className="text-red-700 flex items-center mb-1 text-sm"><i className="fas fa-utensils mr-1"></i>營養建議</strong>
                                                     <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
-                                                        {current.bmi > 24 && <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
-                                                        {(current.smi < 7) ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
+                                                        {current.bmi && current.bmi > 24 && <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
+                                                        {current.smi !== '' ? (current.smi < 7 ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>) : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
                                                         <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
                                                     </ul>
                                                 </div>
@@ -642,41 +753,104 @@
                     e.preventDefault();
                     setIsSubmitting(true);
 
-                    const height = parseFloat(form.height);
-                    const weight = parseFloat(form.weight);
-                    const muscle_percent = parseFloat(form.muscle_percent);
-                    const bmi = calcBMI(height, weight);
-                    const smi = calcSMI(height, weight, muscle_percent);
-                    const muscle_kg = (weight * muscle_percent / 100).toFixed(1);
-                    const whr = (form.waist && form.hip) ? (form.waist / form.hip).toFixed(2) : 0;
+                    const height = form.height !== '' ? parseFloat(form.height) : '';
+                    const weight = form.weight !== '' ? parseFloat(form.weight) : '';
+                    const muscle_percent = form.muscle_percent !== '' ? parseFloat(form.muscle_percent) : '';
+                    const body_fat = form.body_fat !== '' ? parseFloat(form.body_fat) : '';
+                    const visceral_fat = form.visceral_fat !== '' ? parseFloat(form.visceral_fat) : '';
+                    const body_age = form.body_age !== '' ? parseInt(form.body_age, 10) : '';
+                    const bmr = form.bmr !== '' ? parseFloat(form.bmr) : '';
+                    const waist = form.waist !== '' ? parseFloat(form.waist) : '';
+                    const hip = form.hip !== '' ? parseFloat(form.hip) : '';
+                    
+                    const sit_ups_1m = form.sit_ups_1m !== '' ? parseFloat(form.sit_ups_1m) : '';
+                    const walk_6m = form.walk_6m !== '' ? parseFloat(form.walk_6m) : '';
+                    const flexibility = form.flexibility !== '' ? parseFloat(form.flexibility) : '';
+                    const sit_stand_30s = form.sit_stand_30s !== '' ? parseFloat(form.sit_stand_30s) : '';
+
+                    const bmi = (typeof height === 'number' && typeof weight === 'number') ? calcBMI(height, weight) : '';
+                    const smi = (typeof height === 'number' && typeof weight === 'number' && typeof muscle_percent === 'number') ? calcSMI(height, weight, muscle_percent) : '';
+                    const muscle_kg = (typeof weight === 'number' && typeof muscle_percent === 'number') ? (weight * muscle_percent / 100).toFixed(1) : '';
+                    const whr = (typeof waist === 'number' && typeof hip === 'number' && hip !== 0) ? (waist / hip).toFixed(2) : '';
 
                     const payload = {
                         password: apiPass,
                         id: Date.now().toString(),
+                        '唯一識別碼': Date.now().toString(),
+                        
                         bed_number: form.bed_number,
+                        '床號': form.bed_number,
+                        
                         name: form.name,
+                        '姓名': form.name,
+                        
                         sex: form.sex,
+                        '性別': form.sex,
+                        
                         dob: form.dob,
-                        age: form.age,
-                        session: 1, 
+                        '出生年月日': form.dob,
+                        
+                        age: form.age !== '' ? Number(form.age) : '',
+                        '年齡': form.age !== '' ? Number(form.age) : '',
+                        
+                        session: 1,
+                        '評估次別': 1,
+                        
                         date: form.date,
+                        eval_date: form.date,
+                        assessment_date: form.date,
+                        '評估日期': form.date,
+                        
                         height: height,
+                        '身高(cm)': height,
+                        
                         weight: weight,
-                        bmi: bmi.toFixed(1),
-                        body_fat: form.body_fat,
+                        '體重(kg)': weight,
+                        
+                        bmi: bmi !== '' ? Number(bmi.toFixed(1)) : '',
+                        'BMI': bmi !== '' ? Number(bmi.toFixed(1)) : '',
+                        
+                        body_fat: body_fat,
+                        '體脂肪(%)': body_fat,
+                        
                         muscle_percent: muscle_percent,
-                        muscle_kg: muscle_kg,
-                        smi: smi.toFixed(1),
-                        bmr: form.bmr,
-                        body_age: form.body_age,
-                        visceral_fat: form.visceral_fat,
-                        waist: form.waist,
-                        hip: form.hip,
-                        whr: whr,
-                        sit_ups_1m: form.sit_ups_1m,
-                        walk_6m: form.walk_6m,
-                        flexibility: form.flexibility,
-                        sit_stand_30s: form.sit_stand_30s
+                        '骨骼肌(%)': muscle_percent,
+                        
+                        muscle_kg: muscle_kg !== '' ? Number(muscle_kg) : '',
+                        '骨骼肌(kg)': muscle_kg !== '' ? Number(muscle_kg) : '',
+                        
+                        smi: smi !== '' ? Number(smi.toFixed(1)) : '',
+                        'SMI': smi !== '' ? Number(smi.toFixed(1)) : '',
+                        
+                        bmr: bmr,
+                        '基礎代謝(kcal)': bmr,
+                        
+                        body_age: body_age,
+                        '體年齡': body_age,
+                        
+                        visceral_fat: visceral_fat,
+                        '內臟脂肪': visceral_fat,
+                        
+                        waist: waist,
+                        '腰圍(cm)': waist,
+                        
+                        hip: hip,
+                        '臀圍(cm)': hip,
+                        
+                        whr: whr !== '' ? Number(whr) : '',
+                        '腰臀比': whr !== '' ? Number(whr) : '',
+                        
+                        sit_ups_1m: sit_ups_1m,
+                        '一分鐘仰臥起坐(次)': sit_ups_1m,
+                        
+                        walk_6m: walk_6m,
+                        '六分鐘行走測驗(m)': walk_6m,
+                        
+                        flexibility: flexibility,
+                        '柔軟度(cm)': flexibility,
+                        
+                        sit_stand_30s: sit_stand_30s,
+                        '30秒坐站測驗(次)': sit_stand_30s
                     };
 
                     try {
@@ -715,15 +889,15 @@
                                     <label className="block text-sm">床號 <input type="text" name="bed_number" value={form.bed_number} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">姓名 <input required type="text" name="name" value={form.name} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">性別 <select name="sex" value={form.sex} onChange={handleChange} className="w-full border p-2 rounded"><option>男</option><option>女</option></select></label>
-                                    <label className="block text-sm">出生年月日 <input required type="date" name="dob" value={form.dob} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">出生年月日 <input type="date" name="dob" value={form.dob} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">年齡 (自動) <input type="number" readOnly name="age" value={form.age} className="w-full border p-2 rounded bg-gray-100" /></label>
                                 </div>
                             </div>
                             <div className="space-y-4">
                                 <h3 className="font-bold text-blue-800 border-l-4 border-blue-600 pl-2">2. 身體素質</h3>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                    <label className="block text-sm">身高 (cm) <input required type="number" name="height" value={form.height} onChange={handleChange} className="w-full border p-2 rounded" /></label>
-                                    <label className="block text-sm">體重 (kg) <input required type="number" name="weight" value={form.weight} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">身高 (cm) <input type="number" name="height" value={form.height} onChange={handleChange} className="w-full border p-2 rounded" /></label>
+                                    <label className="block text-sm">體重 (kg) <input type="number" name="weight" value={form.weight} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">腰圍 (cm) <input type="number" name="waist" value={form.waist} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">臀圍 (cm) <input type="number" name="hip" value={form.hip} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                     <label className="block text-sm">體脂率 (%) <input type="number" name="body_fat" value={form.body_fat} onChange={handleChange} className="w-full border p-2 rounded" /></label>
@@ -760,18 +934,7 @@
                     
                     if (json.status === 'success') {
                         // 驗證成功，手動執行原本的資料處理邏輯
-                        const sheetData = json.data.map(row => ({
-                            id: row['唯一識別碼'], bed_number: row['床號'], name: row['姓名'], sex: row['性別'],
-                            dob: row['出生年月日'] ? new Date(row['出生年月日']).toISOString().split('T')[0] : "",
-                            age: Number(row['年齡']), session: row['評估次別'],
-                            date: row['評估日期'] ? new Date(row['評估日期']).toISOString().split('T')[0] : "",
-                            height: Number(row['身高(cm)']), weight: Number(row['體重(kg)']), bmi: Number(row['BMI']),
-                            body_fat: Number(row['體脂肪(%)']), muscle_percent: Number(row['骨骼肌(%)']), visceral_fat: Number(row['內臟脂肪']),
-                            smi: Number(row['SMI']), bmr: Number(row['基礎代謝(kcal)']), body_age: Number(row['體年齡']),
-                            waist: Number(row['腰圍(cm)']), hip: Number(row['臀圍(cm)']), whr: Number(row['腰臀比']),
-                            sit_ups_1m: Number(row['一分鐘仰臥起坐(次)']), walk_6m: Number(row['六分鐘行走測驗(m)']),
-                            flexibility: Number(row['柔軟度(cm)']), sit_stand_30s: Number(row['30秒坐站測驗(次)'])
-                        }));
+                        const sheetData = json.data.map(row => mapRowToData(row));
                         setData(processData(sheetData));
                         setIsLoggedIn(true); // 設定為已登入
                     } else {
