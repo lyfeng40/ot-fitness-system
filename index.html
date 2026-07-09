@@ -129,6 +129,38 @@
         };
 
         // --- 邏輯與標準 ---
+        const getRocSessionFromGregorian = (gregorianDateStr) => {
+            if (!gregorianDateStr) return '';
+            const parts = gregorianDateStr.split('-');
+            if (parts.length >= 2) {
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10);
+                const rocYear = year - 1911;
+                const mm = String(month).padStart(2, '0');
+                return `${rocYear}.${mm}`;
+            }
+            return '';
+        };
+
+        const formatDateToRoc = (gregorianDateStr) => {
+            if (!gregorianDateStr) return '';
+            const str = String(gregorianDateStr).trim();
+            const parts = str.split('-');
+            if (parts.length >= 2) {
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10);
+                const day = parts[2] ? parseInt(parts[2], 10) : null;
+                const rocYear = year - 1911;
+                const mm = String(month).padStart(2, '0');
+                if (day !== null && !isNaN(day)) {
+                    const dd = String(day).padStart(2, '0');
+                    return `${rocYear}.${mm}.${dd}`;
+                }
+                return `${rocYear}.${mm}`;
+            }
+            return str;
+        };
+
         const formatDateSafe = (dateVal) => {
             if (!dateVal) return "";
             
@@ -169,13 +201,27 @@
             // Replace all dots, slashes, or backslashes with dashes
             str = str.replace(/[./\\]/g, '-');
 
-            // Match YYYY-MM-DD
-            const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            // 1. Match YYY-MM-DD or YYYY-MM-DD (e.g. "115-06-30" or "2026-06-30")
+            let match = str.match(/^(\d{2,4})-(\d{1,2})-(\d{1,2})/);
             if (match) {
-                const yyyy = match[1];
+                let year = parseInt(match[1], 10);
                 const mm = match[2].padStart(2, '0');
                 const dd = match[3].padStart(2, '0');
-                return `${yyyy}-${mm}-${dd}`;
+                if (year < 1900) {
+                    year += 1911; // Convert ROC to Gregorian
+                }
+                return `${year}-${mm}-${dd}`;
+            }
+
+            // 2. Match YYY-MM or YYYY-MM (e.g. "115-06" or "2026-06")
+            match = str.match(/^(\d{2,4})-(\d{1,2})$/);
+            if (match) {
+                let year = parseInt(match[1], 10);
+                const mm = match[2].padStart(2, '0');
+                if (year < 1900) {
+                    year += 1911; // Convert ROC to Gregorian
+                }
+                return `${year}-${mm}-01`; // Default day to 01
             }
 
             // Try standard JS Date parsing but format it locally
@@ -190,32 +236,49 @@
             return "";
         };
 
-        const mapRowToData = (row) => ({
-            id: row['唯一識別碼'] || '',
-            bed_number: row['床號'] || '',
-            name: row['姓名'] || '',
-            sex: row['性別'] || '男',
-            dob: formatDateSafe(row['出生年月日']),
-            age: (row['年齡'] !== undefined && row['年齡'] !== null && row['年齡'] !== '') ? Number(row['年齡']) : '',
-            session: row['評估次別'] || 1,
-            date: formatDateSafe(row['評估日期']),
-            height: (row['身高(cm)'] !== undefined && row['身高(cm)'] !== null && row['身高(cm)'] !== '') ? Number(row['身高(cm)']) : '',
-            weight: (row['體重(kg)'] !== undefined && row['體重(kg)'] !== null && row['體重(kg)'] !== '') ? Number(row['體重(kg)']) : '',
-            bmi: (row['BMI'] !== undefined && row['BMI'] !== null && row['BMI'] !== '') ? Number(row['BMI']) : '',
-            body_fat: (row['體脂肪(%)'] !== undefined && row['體脂肪(%)'] !== null && row['體脂肪(%)'] !== '') ? Number(row['體脂肪(%)']) : '',
-            muscle_percent: (row['骨骼肌(%)'] !== undefined && row['骨骼肌(%)'] !== null && row['骨骼肌(%)'] !== '') ? Number(row['骨骼肌(%)']) : '',
-            visceral_fat: (row['內臟脂肪'] !== undefined && row['內臟脂肪'] !== null && row['內臟脂肪'] !== '') ? Number(row['內臟脂肪']) : '',
-            smi: (row['SMI'] !== undefined && row['SMI'] !== null && row['SMI'] !== '') ? Number(row['SMI']) : '',
-            bmr: (row['基礎代謝(kcal)'] !== undefined && row['基礎代謝(kcal)'] !== null && row['基礎代謝(kcal)'] !== '') ? Number(row['基礎代謝(kcal)']) : '',
-            body_age: (row['體年齡'] !== undefined && row['體年齡'] !== null && row['體年齡'] !== '') ? Number(row['體年齡']) : '',
-            waist: (row['腰圍(cm)'] !== undefined && row['腰圍(cm)'] !== null && row['腰圍(cm)'] !== '') ? Number(row['腰圍(cm)']) : '',
-            hip: (row['臀圍(cm)'] !== undefined && row['臀圍(cm)'] !== null && row['臀圍(cm)'] !== '') ? Number(row['臀圍(cm)']) : '',
-            whr: (row['腰臀比'] !== undefined && row['腰臀比'] !== null && row['腰臀比'] !== '') ? Number(row['腰臀比']) : '',
-            sit_ups_1m: (row['一分鐘仰臥起坐(次)'] !== undefined && row['一分鐘仰臥起坐(次)'] !== null && row['一分鐘仰臥起坐(次)'] !== '') ? Number(row['一分鐘仰臥起坐(次)']) : '',
-            walk_6m: (row['六分鐘行走測驗(m)'] !== undefined && row['六分鐘行走測驗(m)'] !== null && row['六分鐘行走測驗(m)'] !== '') ? Number(row['六分鐘行走測驗(m)']) : '',
-            flexibility: (row['柔軟度(cm)'] !== undefined && row['柔軟度(cm)'] !== null && row['柔軟度(cm)'] !== '') ? Number(row['柔軟度(cm)']) : '',
-            sit_stand_30s: (row['30秒坐站測驗(次)'] !== undefined && row['30秒坐站測驗(次)'] !== null && row['30秒坐站測驗(次)'] !== '') ? Number(row['30秒坐站測驗(次)']) : ''
-        });
+        const mapRowToData = (row) => {
+            // Unify R.O.C. session vs Gregorian assessment date
+            // Parse evaluation date from database
+            let dateVal = formatDateSafe(row['評估日期']);
+            let sessionVal = row['評估次別'] ? String(row['評估次別']).trim() : '';
+
+            // If date is missing, but session is present, fallback to parsing session as date (e.g. "115.06" -> "2026-06-01")
+            if (!dateVal && sessionVal) {
+                dateVal = formatDateSafe(sessionVal);
+            }
+
+            // If session is missing, but date is present, fallback to calculating ROC session from date (e.g. "2026-06-30" -> "115.06")
+            if (!sessionVal && dateVal) {
+                sessionVal = getRocSessionFromGregorian(dateVal);
+            }
+
+            return {
+                id: row['唯一識別碼'] || '',
+                bed_number: row['床號'] || '',
+                name: row['姓名'] || '',
+                sex: row['性別'] || '男',
+                dob: formatDateSafe(row['出生年月日']),
+                age: (row['年齡'] !== undefined && row['年齡'] !== null && row['年齡'] !== '') ? Number(row['年齡']) : '',
+                session: sessionVal,
+                date: dateVal,
+                height: (row['身高(cm)'] !== undefined && row['身高(cm)'] !== null && row['身高(cm)'] !== '') ? Number(row['身高(cm)']) : '',
+                weight: (row['體重(kg)'] !== undefined && row['體重(kg)'] !== null && row['體重(kg)'] !== '') ? Number(row['體重(kg)']) : '',
+                bmi: (row['BMI'] !== undefined && row['BMI'] !== null && row['BMI'] !== '') ? Number(row['BMI']) : '',
+                body_fat: (row['體脂肪(%)'] !== undefined && row['體脂肪(%)'] !== null && row['體脂肪(%)'] !== '') ? Number(row['體脂肪(%)']) : '',
+                muscle_percent: (row['骨骼肌(%)'] !== undefined && row['骨骼肌(%)'] !== null && row['骨骼肌(%)'] !== '') ? Number(row['骨骼肌(%)']) : '',
+                visceral_fat: (row['內臟脂肪'] !== undefined && row['內臟脂肪'] !== null && row['內臟脂肪'] !== '') ? Number(row['內臟脂肪']) : '',
+                smi: (row['SMI'] !== undefined && row['SMI'] !== null && row['SMI'] !== '') ? Number(row['SMI']) : '',
+                bmr: (row['基礎代謝(kcal)'] !== undefined && row['基礎代謝(kcal)'] !== null && row['基礎代謝(kcal)'] !== '') ? Number(row['基礎代謝(kcal)']) : '',
+                body_age: (row['體年齡'] !== undefined && row['體年齡'] !== null && row['體年齡'] !== '') ? Number(row['體年齡']) : '',
+                waist: (row['腰圍(cm)'] !== undefined && row['腰圍(cm)'] !== null && row['腰圍(cm)'] !== '') ? Number(row['腰圍(cm)']) : '',
+                hip: (row['臀圍(cm)'] !== undefined && row['臀圍(cm)'] !== null && row['臀圍(cm)'] !== '') ? Number(row['臀圍(cm)']) : '',
+                whr: (row['腰臀比'] !== undefined && row['腰臀比'] !== null && row['腰臀比'] !== '') ? Number(row['腰臀比']) : '',
+                sit_ups_1m: (row['一分鐘仰臥起坐(次)'] !== undefined && row['一分鐘仰臥起坐(次)'] !== null && row['一分鐘仰臥起坐(次)'] !== '') ? Number(row['一分鐘仰臥起坐(次)']) : '',
+                walk_6m: (row['六分鐘行走測驗(m)'] !== undefined && row['六分鐘行走測驗(m)'] !== null && row['六分鐘行走測驗(m)'] !== '') ? Number(row['六分鐘行走測驗(m)']) : '',
+                flexibility: (row['柔軟度(cm)'] !== undefined && row['柔軟度(cm)'] !== null && row['柔軟度(cm)'] !== '') ? Number(row['柔軟度(cm)']) : '',
+                sit_stand_30s: (row['30秒坐站測驗(次)'] !== undefined && row['30秒坐站測驗(次)'] !== null && row['30秒坐站測驗(次)'] !== '') ? Number(row['30秒坐站測驗(次)']) : ''
+            };
+        };
 
         const calcAge = (dob) => { 
             if(!dob) return ""; 
@@ -440,7 +503,7 @@
                                         {allDates.map(d => (
                                             <label key={d} className="flex items-center space-x-2 p-2 hover:bg-gray-100 cursor-pointer text-left text-sm border-b">
                                                 <input type="checkbox" checked={selectedDates.includes(d)} onChange={() => toggleDate(d)} className="form-checkbox h-4 w-4 text-blue-600" />
-                                                <span>{d}</span>
+                                                <span>{formatDateToRoc(d)}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -460,8 +523,8 @@
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <InteractiveChart title="身體素質平均分析" datasets={bodyDatasets} labels={datesForChart} />
-                            <InteractiveChart title="體能表現平均分析" datasets={fitnessDatasets} labels={datesForChart} />
+                            <InteractiveChart title="身體素質平均分析" datasets={bodyDatasets} labels={datesForChart.map(formatDateToRoc)} />
+                            <InteractiveChart title="體能表現平均分析" datasets={fitnessDatasets} labels={datesForChart.map(formatDateToRoc)} />
                         </div>
                     </div>
                 );
@@ -493,24 +556,48 @@
                     });
                 }, [data]);
 
-                const uniquePeople = useMemo(() => {
+                // Get all unique sessions sorted chronologically
+                const uniqueSessions = useMemo(() => {
+                    const sessions = [...new Set(normalizedData.map(d => d.session))].filter(Boolean);
+                    // Sort sessions (like ROC formats "115.06", "115.07")
+                    return sessions.sort((a, b) => a.localeCompare(b));
+                }, [normalizedData]);
+
+                const [selSession, setSelSession] = useState("");
+                const [selKey, setSelKey] = useState("");
+
+                // Default to the latest session
+                useEffect(() => {
+                    if (uniqueSessions.length > 0 && !selSession) {
+                        setSelSession(uniqueSessions[uniqueSessions.length - 1]);
+                    }
+                }, [uniqueSessions]);
+
+                // Filter people who have records in the selected session
+                const peopleInSession = useMemo(() => {
+                    if (!selSession) return [];
+                    const recordsInSession = normalizedData.filter(d => d.session === selSession);
                     const map = new Map();
-                    normalizedData.forEach(d => {
+                    recordsInSession.forEach(d => {
                         const key = `${d.name}_${d.dob}`;
                         if (!map.has(key)) map.set(key, d);
                     });
-                    return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
-                }, [normalizedData]);
+                    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+                }, [selSession, normalizedData]);
 
-                const [selKey, setSelKey] = useState("");
-                const [selDate, setSelDate] = useState("");
-
+                // Auto select the first student in that session when session or people list changes
                 useEffect(() => {
-                    if (uniquePeople.length > 0 && !selKey) {
-                        setSelKey(`${uniquePeople[0].name}_${uniquePeople[0].dob}`);
+                    if (peopleInSession.length > 0) {
+                        const keysInSession = peopleInSession.map(p => `${p.name}_${p.dob}`);
+                        if (!keysInSession.includes(selKey)) {
+                            setSelKey(keysInSession[0]);
+                        }
+                    } else {
+                        setSelKey("");
                     }
-                }, [uniquePeople]);
+                }, [selSession, peopleInSession]);
 
+                // Get all history records of the selected person for trend analysis on Page 2
                 const personRecords = useMemo(() => {
                     if (!selKey) return [];
                     const [n, d] = selKey.split('_');
@@ -518,10 +605,11 @@
                     return normalizedData.filter(r => r.name === n && (r.dob || '') === resolvedD).sort((a,b) => a.date.localeCompare(b.date));
                 }, [selKey, normalizedData]);
 
-                const availableDates = personRecords.map(r => r.date);
-                useEffect(() => { if(availableDates.length > 0 && !availableDates.includes(selDate)) setSelDate(availableDates[availableDates.length-1]); }, [selKey, personRecords]);
-
-                const current = personRecords.find(r => r.date === selDate) || {};
+                // The current assessment report we display is for the selected session
+                const current = useMemo(() => {
+                    if (!personRecords.length || !selSession) return {};
+                    return personRecords.find(r => r.session === selSession) || personRecords[personRecords.length - 1];
+                }, [personRecords, selSession]);
 
                 const radarScores = current.id ? [
                     normalizeScore(current.bmi, 22, 'lower_better'), normalizeScore(current.smi, 7.0, 'higher_better'),
@@ -574,12 +662,62 @@
                     const el = document.getElementById('report-container');
                     const opt = {
                         margin: 5,
-                        filename: `${current.name}_${selDate}_完整報告.pdf`,
+                        filename: `${current.name}_${current.date ? formatDateToRoc(current.date) : ""}_完整報告.pdf`,
                         image: { type: 'jpeg', quality: 0.98 },
                         html2canvas: { scale: 4, useCORS: true }, 
                         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
                     };
                     html2pdf().from(el).set(opt).save();
+                };
+
+                const exportSessionDataToExcel = (sessionVal) => {
+                    if (!sessionVal) {
+                        alert("無有效的評估次別");
+                        return;
+                    }
+                    
+                    // Filter data for this session
+                    const sessionData = data.filter(d => String(d.session).trim() === String(sessionVal).trim());
+                    if (sessionData.length === 0) {
+                        alert("該次別無資料可下載");
+                        return;
+                    }
+                    
+                    // Map to Chinese headers
+                    const excelRows = sessionData.map(d => ({
+                        '唯一識別碼': d.id,
+                        '床號': d.bed_number,
+                        '姓名': d.name,
+                        '性別': d.sex,
+                        '出生年月日': d.dob ? formatDateToRoc(d.dob) : '',
+                        '年齡': d.age,
+                        '評估次別': d.session,
+                        '評估日期': d.date ? formatDateToRoc(d.date) : '',
+                        '身高(cm)': d.height,
+                        '體重(kg)': d.weight,
+                        'BMI': d.bmi,
+                        '體脂肪(%)': d.body_fat,
+                        '骨骼肌(%)': d.muscle_percent,
+                        '內臟脂肪': d.visceral_fat,
+                        'SMI': d.smi,
+                        '基礎代謝(kcal)': d.bmr,
+                        '體年齡': d.body_age,
+                        '腰圍(cm)': d.waist,
+                        '臀圍(cm)': d.hip,
+                        '腰臀比': d.whr,
+                        '一分鐘仰臥起坐(次)': d.sit_ups_1m,
+                        '六分鐘行走測驗(m)': d.walk_6m,
+                        '柔軟度(cm)': d.flexibility,
+                        '30秒坐站測驗(次)': d.sit_stand_30s
+                    }));
+                    
+                    // Generate workbook
+                    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "評估資料");
+                    
+                    // Write and save
+                    XLSX.writeFile(workbook, `OT體適能評估_${sessionVal}_全部學員資料.xlsx`);
                 };
 
                 const dates = personRecords.map(r=>r.date);
@@ -606,20 +744,27 @@
                     <div className="pb-10">
                         <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-wrap gap-4 items-center justify-between no-print">
                             <div className="flex gap-4 items-center">
-                                <label className="font-bold">學員: 
-                                    <select className="border rounded p-1" value={selKey} onChange={e => setSelKey(e.target.value)}>
-                                        {uniquePeople.map(p => (
-                                            <option key={`${p.name}_${p.dob}`} value={`${p.name}_${p.dob}`}>{p.name} ({p.dob})</option>
+                                <label className="font-bold">評估次別: 
+                                    <select className="border rounded p-1" value={selSession} onChange={e => setSelSession(e.target.value)}>
+                                        {uniqueSessions.map(s => (
+                                            <option key={s} value={s}>{s}</option>
                                         ))}
                                     </select>
                                 </label>
-                                <label className="font-bold">日期: 
-                                    <select className="border rounded p-1" value={selDate} onChange={e => setSelDate(e.target.value)}>
-                                        {availableDates.map(d=><option key={d} value={d}>{d}</option>)}
+                                <label className="font-bold">學員: 
+                                    <select className="border rounded p-1" value={selKey} onChange={e => setSelKey(e.target.value)}>
+                                        {peopleInSession.map(p => (
+                                            <option key={`${p.name}_${p.dob}`} value={`${p.name}_${p.dob}`}>{p.name} ({p.dob ? formatDateToRoc(p.dob) : '無生日'})</option>
+                                        ))}
                                     </select>
                                 </label>
                             </div>
-                            <button onClick={downloadPDF} className="bg-blue-600 text-white px-4 py-2 rounded shadow"><i className="fas fa-print mr-2"></i>下載/列印</button>
+                            <div className="flex gap-2">
+                                <button onClick={() => exportSessionDataToExcel(current.session)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow flex items-center gap-2">
+                                    <i className="fas fa-file-excel"></i>下載當次全部資料 ({current.session ? formatDateToRoc(current.session) : ""})
+                                </button>
+                                <button onClick={downloadPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2"><i className="fas fa-print mr-2"></i>下載/列印</button>
+                            </div>
                         </div>
 
                         <div id="report-container" className="max-w-[210mm] mx-auto bg-white shadow-lg">
@@ -629,11 +774,11 @@
                                     <h1 className="text-3xl font-bold text-gray-800">體適能評估與介入建議書</h1>
                                 </div>
                                 <div className="bg-blue-50 p-2 rounded mb-2 grid grid-cols-5 gap-2 text-center text-sm border border-blue-100">
-                                    <div><p className="text-gray-500 text-xs">評估日期</p><b>{current.date}</b></div>
+                                    <div><p className="text-gray-500 text-xs">評估日期</p><b>{formatDateToRoc(current.date)}</b></div>
                                     <div><p className="text-gray-500 text-xs">床號</p><b>{current.bed_number||"未填"}</b></div>
                                     <div><p className="text-gray-500 text-xs">姓名</p><b className="text-lg">{current.name}</b></div>
                                     <div><p className="text-gray-500 text-xs">性別/年齡</p><b>{current.sex} / {current.age}歲</b></div>
-                                    <div><p className="text-gray-500 text-xs">出生年月日</p><b>{current.dob||"未填"}</b></div>
+                                    <div><p className="text-gray-500 text-xs">出生年月日</p><b>{current.dob ? formatDateToRoc(current.dob) : "未填"}</b></div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4 mb-2 flex-grow items-stretch">
@@ -717,13 +862,13 @@
                             <div className="pdf-page p-8 relative">
                                 <div className="border-b-4 border-gray-600 pb-4 mb-6 text-center">
                                     <h1 className="text-3xl font-bold text-gray-800">歷程追蹤分析報告</h1>
-                                    <p className="text-gray-500 mt-2">學員: {current.name} ( {personRecords[0].date} ~ {personRecords[personRecords.length-1].date} )</p>
+                                    <p className="text-gray-500 mt-2">學員: {current.name} ( {formatDateToRoc(personRecords[0].date)} ~ {formatDateToRoc(personRecords[personRecords.length-1].date)} )</p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-6 h-[800px]">
-                                    <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={chartGroup1} labels={dates} initialSelected={['體重', '骨骼肌']} />
-                                    <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={chartGroup2} labels={dates} initialSelected={['內臟脂肪']} />
-                                    <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={chartGroup3} labels={dates} />
-                                    <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={chartGroup4} labels={dates} />
+                                    <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={chartGroup1} labels={dates.map(formatDateToRoc)} initialSelected={['體重', '骨骼肌']} />
+                                    <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={chartGroup2} labels={dates.map(formatDateToRoc)} initialSelected={['內臟脂肪']} />
+                                    <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={chartGroup3} labels={dates.map(formatDateToRoc)} />
+                                    <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={chartGroup4} labels={dates.map(formatDateToRoc)} />
                                 </div>
                             </div>
                         </div>
@@ -773,10 +918,13 @@
                     const muscle_kg = (typeof weight === 'number' && typeof muscle_percent === 'number') ? (weight * muscle_percent / 100).toFixed(1) : '';
                     const whr = (typeof waist === 'number' && typeof hip === 'number' && hip !== 0) ? (waist / hip).toFixed(2) : '';
 
+                    const sessionVal = getRocSessionFromGregorian(form.date) || '1';
+                    const idVal = `${form.bed_number || 'unknown'}_${sessionVal}`;
+
                     const payload = {
                         password: apiPass,
-                        id: Date.now().toString(),
-                        '唯一識別碼': Date.now().toString(),
+                        id: idVal,
+                        '唯一識別碼': idVal,
                         
                         bed_number: form.bed_number,
                         '床號': form.bed_number,
@@ -793,8 +941,8 @@
                         age: form.age !== '' ? Number(form.age) : '',
                         '年齡': form.age !== '' ? Number(form.age) : '',
                         
-                        session: 1,
-                        '評估次別': 1,
+                        session: sessionVal,
+                        '評估次別': sessionVal,
                         
                         date: form.date,
                         eval_date: form.date,
