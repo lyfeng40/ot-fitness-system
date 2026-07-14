@@ -93,7 +93,7 @@
         const Radar = (props) => <ChartComponent type="radar" {...props} />;
 
         // --- 互動式圖表容器 ---
-        const InteractiveChart = ({ title, datasets, labels, initialSelected = [] }) => {
+        const InteractiveChart = ({ title, datasets, labels, initialSelected = [], options = {} }) => {
             const [selectedKeys, setSelectedKeys] = useState(initialSelected.length > 0 ? initialSelected : datasets.map(d => d.label));
 
             const toggleKey = (key) => {
@@ -121,7 +121,7 @@
                         ))}
                     </div>
                     <div className="flex-grow min-h-[200px] relative">
-                        {selectedKeys.length > 0 ? <Line data={chartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } } }} /> 
+                        {selectedKeys.length > 0 ? <Line data={chartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, ...options }} /> 
                         : <div className="flex items-center justify-center h-full text-gray-400 text-sm">請點擊上方按鈕選擇顯示項目</div>}
                     </div>
                 </div>
@@ -176,6 +176,10 @@
             // Convert to string and trim
             let str = String(dateVal).trim();
             if (!str) return "";
+
+            // Clean up Chinese date notations like "民國62年5月2日" or "115年6月30日"
+            str = str.replace(/民國|西元/g, '');
+            str = str.replace(/[年月]/g, '-').replace(/日/g, '');
 
             // If it is a timestamp / serialized date from Excel/Google Sheets (numeric)
             if (/^\d+(\.\d+)?$/.test(str)) {
@@ -276,8 +280,42 @@
                 sit_ups_1m: (row['一分鐘仰臥起坐(次)'] !== undefined && row['一分鐘仰臥起坐(次)'] !== null && row['一分鐘仰臥起坐(次)'] !== '') ? Number(row['一分鐘仰臥起坐(次)']) : '',
                 walk_6m: (row['六分鐘行走測驗(m)'] !== undefined && row['六分鐘行走測驗(m)'] !== null && row['六分鐘行走測驗(m)'] !== '') ? Number(row['六分鐘行走測驗(m)']) : '',
                 flexibility: (row['柔軟度(cm)'] !== undefined && row['柔軟度(cm)'] !== null && row['柔軟度(cm)'] !== '') ? Number(row['柔軟度(cm)']) : '',
-                sit_stand_30s: (row['30秒坐站測驗(次)'] !== undefined && row['30秒坐站測驗(次)'] !== null && row['30秒坐站測驗(次)'] !== '') ? Number(row['30秒坐站測驗(次)']) : ''
+                sit_stand_30s: (row['30秒坐站測驗(次)'] !== undefined && row['30秒坐站測驗(次)'] !== null && row['30秒坐站測驗(次)'] !== '') ? Number(row['30秒坐站測驗(次)']) : '',
+                ot_comments: row['職能治療評語與綜合分析'] || row['職能治療評語'] || localStorage.getItem(`ot_comments_${row['唯一識別碼']}_${sessionVal}`) || '',
+                exercise_comments: row['運動處方建議'] || row['運動建議'] || localStorage.getItem(`exercise_comments_${row['唯一識別碼']}_${sessionVal}`) || '',
+                nutrition_comments: row['營養建議'] || row['營養處方建議'] || localStorage.getItem(`nutrition_comments_${row['唯一識別碼']}_${sessionVal}`) || ''
             };
+        };
+
+        const renderListComments = (text) => {
+            if (!text) return null;
+            const lines = text.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .map(line => {
+                    // 清理任何開頭的項目符號如 "•", "-", "*", "1.", "2."
+                    return line.replace(/^[\u2022\-\*\d+\.\s]+/, '');
+                });
+            return (
+                <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                    {lines.map((line, index) => {
+                        // 檢查是否有「：」或「:」，有的話將前半段加粗
+                        const colonIdx = line.indexOf('：');
+                        const colonAltIdx = line.indexOf(':');
+                        const idx = colonIdx !== -1 ? colonIdx : colonAltIdx;
+                        if (idx !== -1) {
+                            const prefix = line.substring(0, idx);
+                            const suffix = line.substring(idx + 1);
+                            return (
+                                <li key={index}>
+                                    <strong>{prefix}：</strong>{suffix}
+                                </li>
+                            );
+                        }
+                        return <li key={index}>{line}</li>;
+                    })}
+                </ul>
+            );
         };
 
         const calcAge = (dob) => { 
@@ -333,27 +371,129 @@
             return 1200;
         };
 
-        const getFitnessRating = (type, sex, age, val) => {
-            let base = 0;
-            if (type === 'sit_ups') {
-                if (sex === '男') base = age < 30 ? 35 : age < 40 ? 30 : age < 50 ? 25 : age < 60 ? 20 : 15;
-                else base = age < 30 ? 27 : age < 40 ? 22 : age < 50 ? 17 : age < 60 ? 13 : 8;
+                const getNormThresholds = (type, sex, age) => {
+            const resolvedSex = sex === '女' ? '女' : '男';
+            const resolvedAge = Math.min(Math.max(Number(age) || 40, 20), 64);
+            
+            const normTables = {
+                flexibility: {
+                    '男': [
+                        { min: 20, max: 24, t: [16.0, 23.0, 28.0, 35.0] },
+                        { min: 25, max: 29, t: [15.0, 21.0, 26.0, 33.0] },
+                        { min: 30, max: 34, t: [14.0, 20.0, 25.0, 31.0] },
+                        { min: 35, max: 39, t: [13.0, 20.0, 25.0, 31.0] },
+                        { min: 40, max: 44, t: [12.0, 19.0, 24.0, 30.0] },
+                        { min: 45, max: 49, t: [12.0, 18.0, 24.0, 30.0] },
+                        { min: 50, max: 54, t: [11.0, 18.0, 24.0, 30.0] },
+                        { min: 55, max: 59, t: [10.0, 16.0, 22.0, 30.0] },
+                        { min: 60, max: 64, t: [8.0, 15.0, 20.0, 28.0] }
+                    ],
+                    '女': [
+                        { min: 20, max: 24, t: [20.0, 27.0, 33.0, 39.5] },
+                        { min: 25, max: 29, t: [18.0, 25.0, 31.0, 37.0] },
+                        { min: 30, max: 34, t: [18.0, 25.0, 30.0, 36.0] },
+                        { min: 35, max: 39, t: [18.0, 25.0, 30.0, 36.0] },
+                        { min: 40, max: 44, t: [17.0, 24.0, 30.0, 36.0] },
+                        { min: 45, max: 49, t: [17.0, 24.0, 29.0, 36.0] },
+                        { min: 50, max: 54, t: [17.0, 25.0, 30.0, 37.0] },
+                        { min: 55, max: 59, t: [18.0, 25.0, 31.0, 37.0] },
+                        { min: 60, max: 64, t: [18.0, 25.0, 31.0, 37.0] }
+                    ]
+                },
+                sit_ups: {
+                    '男': [
+                        { min: 20, max: 24, t: [31, 36, 40, 46] },
+                        { min: 25, max: 29, t: [29, 33, 37, 42] },
+                        { min: 30, max: 34, t: [26, 30, 34, 40] },
+                        { min: 35, max: 39, t: [24, 28, 31, 36] },
+                        { min: 40, max: 44, t: [21, 25, 29, 34] },
+                        { min: 45, max: 49, t: [19, 23, 27, 32] },
+                        { min: 50, max: 54, t: [16, 21, 25, 30] },
+                        { min: 55, max: 59, t: [14, 19, 22, 27] },
+                        { min: 60, max: 64, t: [8, 14, 19, 24] }
+                    ],
+                    '女': [
+                        { min: 20, max: 24, t: [21, 26, 30, 36] },
+                        { min: 25, max: 29, t: [18, 23, 27, 31] },
+                        { min: 30, max: 34, t: [15, 20, 23, 28] },
+                        { min: 35, max: 39, t: [13, 18, 22, 26] },
+                        { min: 40, max: 44, t: [12, 17, 21, 25] },
+                        { min: 45, max: 49, t: [11, 15, 19, 24] },
+                        { min: 50, max: 54, t: [7, 12, 16, 21] },
+                        { min: 55, max: 59, t: [6, 10, 15, 20] },
+                        { min: 60, max: 64, t: [1, 6, 11, 16] }
+                    ]
+                },
+                sit_stand: {
+                    '男': [
+                        { min: 20, max: 54, t: [9, 11, 14, 15] },
+                        { min: 55, max: 64, t: [6, 8, 11, 12] }
+                    ],
+                    '女': [
+                        { min: 20, max: 54, t: [9, 11, 14, 15] },
+                        { min: 55, max: 64, t: [6, 8, 11, 12] }
+                    ]
+                }
+            };
+
+            const list = normTables[type][resolvedSex];
+            const row = list.find(r => resolvedAge >= r.min && resolvedAge <= r.max) || list[list.length - 1];
+            return row.t;
+        };
+
+        const getNormScore = (type, val, sex, age) => {
+            if (val === '' || val === null || val === undefined || isNaN(Number(val))) return 0;
+            const v = Number(val);
+            const t = getNormThresholds(type, sex, age);
+            
+            const [T1, T2, T3, T4] = t;
+            let score = 0;
+            if (v <= T1) {
+                const baseVal = Math.max(0.1, T1);
+                const targetT1 = type === 'sit_stand' ? 40 : 45;
+                score = 10 + (Math.max(0, v) / baseVal) * (targetT1 - 10);
+            } else if (v <= T2) {
+                const startScore = type === 'sit_stand' ? 40 : 45;
+                const endScore = 60;
+                score = startScore + ((v - T1) / (T2 - T1)) * (endScore - startScore);
+            } else if (v <= T3) {
+                score = 60 + ((v - T2) / (T3 - T2)) * 20;
+            } else if (v <= T4) {
+                const startScore = 80;
+                const endScore = type === 'sit_stand' ? 100 : 95;
+                score = startScore + ((v - T3) / (T4 - T3)) * (endScore - startScore);
             } else {
-                if (sex === '男') base = age < 30 ? 28 : age < 40 ? 24 : age < 50 ? 18 : age < 60 ? 15 : 12;
-                else base = age < 30 ? 33 : age < 40 ? 30 : age < 50 ? 27 : age < 60 ? 25 : 22;
+                const startScore = type === 'sit_stand' ? 100 : 95;
+                score = startScore + ((v - T4) / T4) * 20; // Clamped to 120
             }
-            if (val < base * 0.6) return { s: "不好", c: "text-red-600" };
-            if (val < base * 0.8) return { s: "稍差", c: "text-orange-600" };
-            if (val < base * 1.2) return { s: "適當", c: "text-blue-600" };
-            if (val < base * 1.4) return { s: "良好", c: "text-green-600" };
+            return Math.min(Math.max(score, 10), 120);
+        };
+
+        const getFitnessRating = (type, sex, age, val) => {
+            if (val === '' || val === null || val === undefined || isNaN(Number(val))) {
+                return { s: "-", c: "" };
+            }
+            const v = Number(val);
+            const t = getNormThresholds(type, sex, age);
+            
+            if (type === 'sit_stand') {
+                if (v <= t[0]) return { s: "高危防護", c: "text-red-600 font-bold" };
+                if (v <= t[1]) return { s: "防跌邊緣", c: "text-orange-600 font-semibold" };
+                if (v <= t[2]) return { s: "獨立安全", c: "text-blue-600 font-semibold" };
+                return { s: "卓越復元", c: "text-green-600 font-bold" };
+            }
+            
+            if (v <= t[0]) return { s: "不好", c: "text-red-600" };
+            if (v <= t[1]) return { s: "稍差", c: "text-orange-600" };
+            if (v <= t[2]) return { s: "普通", c: "text-blue-600" };
+            if (v <= t[3]) return { s: "尚好", c: "text-green-600" };
             return { s: "很好", c: "text-green-700 font-bold" };
         };
 
         const getStandard = (type, val, sex, age) => {
             if (type === 'sit_stand') {
-                const target = getSitStandTarget(sex, age);
-                if (val < target) return { status: `低於標準(${target})`, color: 'text-red-600' };
-                return { status: "標準", color: 'text-green-600' };
+                const r = getFitnessRating('sit_stand', sex, age, val);
+                return { status: `${r.s} (健康成人平均22.6)`, color: r.c };
             }
             if (type === 'walk') return { status: "-", color: "" };
             if (type === 'sit_ups') {
@@ -370,6 +510,225 @@
         const getBMIStatus = (bmi) => bmi < 18.5 ? "體重太輕" : bmi < 24 ? "標準體重" : bmi < 27 ? "過重" : bmi < 30 ? "輕度肥胖" : bmi < 35 ? "中度肥胖" : "重度肥胖";
         const getSarcopeniaStatus = (sex, smi) => (sex === "男" && smi < 7.0) || (sex === "女" && smi < 5.7) ? "肌少症" : "正常";
         const getWHRStatus = (sex, v) => (sex === "男" && v < 0.92) || (sex === "女" && v < 0.88) ? "標準" : "過高";
+
+        const getClinicalAlerts = (records, currentRecord) => {
+            if (!records || records.length < 2 || !currentRecord) return [];
+            
+            // Sort records chronologically
+            const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+            const currentIndex = sorted.findIndex(r => r.id === currentRecord.id);
+            if (currentIndex <= 0) return [];
+            
+            const cur = sorted[currentIndex];
+            
+            // Find the comparison record (target: 90 to 180 days ago, fallback to immediately preceding)
+            const curTime = new Date(cur.date).getTime();
+            let prev = null;
+            
+            // Search for a record in the 90-200 days window
+            for (let i = 0; i < currentIndex; i++) {
+                const t = new Date(sorted[i].date).getTime();
+                const daysDiff = (curTime - t) / (1000 * 60 * 60 * 24);
+                if (daysDiff >= 60 && daysDiff <= 200) {
+                    prev = sorted[i];
+                    break;
+                }
+            }
+            
+            // Fallback to the immediately preceding record
+            if (!prev) {
+                prev = sorted[currentIndex - 1];
+            }
+            
+            const alerts = [];
+            const prevTime = new Date(prev.date).getTime();
+            const daysDiff = Math.round((curTime - prevTime) / (1000 * 60 * 60 * 24));
+            const monthsLabel = daysDiff >= 75 ? `${Math.round(daysDiff/30)}個月前` : `${daysDiff}天前`;
+            
+            const getNum = (v) => (v !== '' && v !== null && v !== undefined && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+            
+            // 1. Weight / BMI alert
+            const curWeight = getNum(cur.weight);
+            const prevWeight = getNum(prev.weight);
+            if (curWeight !== null && prevWeight !== null) {
+                const pct = (curWeight - prevWeight) / prevWeight * 100;
+                if (daysDiff <= 45 && pct >= 5) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '體重 / BMI',
+                        desc: `1個月內體重急速增加 ${pct.toFixed(1)}% (${prevWeight}kg → ${curWeight}kg)`,
+                        significance: '急速體重上升成倍增加罹患心血管疾病的機率（APA/FDA精神科指引定義顯著上升）。'
+                    });
+                } else if (pct >= 7) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '體重 / BMI',
+                        desc: `比${monthsLabel}體重增加 ${pct.toFixed(1)}% (${prevWeight}kg → ${curWeight}kg)`,
+                        significance: '基準體重增加 7% 被定義為臨床顯著之體重增加，會顯著提高代謝性與心臟血管疾病風險。'
+                    });
+                }
+
+                // Weight abnormal loss checking (New)
+                const lossPct = -pct;
+                if (daysDiff <= 45 && lossPct >= 5) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '體重 / BMI',
+                        desc: `1個月內體重不正常下降 ${lossPct.toFixed(1)}% (${prevWeight}kg → ${curWeight}kg)`,
+                        significance: '非預期之急性體重下降可能代表營養不良、藥物副作用或潛在身體健康退化。'
+                    });
+                } else if (lossPct >= 7) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '體重 / BMI',
+                        desc: `比${monthsLabel}體重顯著減少 ${lossPct.toFixed(1)}% (${prevWeight}kg → ${curWeight}kg)`,
+                        significance: '3至6個月內非預期體重減輕大於等於 7% 為臨床異常體重減輕，高度警戒營養不良或潛在慢性疾病。'
+                    });
+                }
+
+                // Continuous weight decrease checking (last 3 records) (New)
+                if (currentIndex >= 2) {
+                    const prev2Weight = getNum(sorted[currentIndex - 2].weight);
+                    if (prev2Weight !== null && curWeight < prevWeight && prevWeight < prev2Weight) {
+                        const hasLossAlert = alerts.some(a => a.metric === '體重 / BMI' && (a.desc.includes('下降') || a.desc.includes('減少')));
+                        if (!hasLossAlert) {
+                            alerts.push({
+                                type: 'warning',
+                                metric: '體重 / BMI',
+                                desc: `體重呈連續下降趨勢 (前次：${prev2Weight}kg → 上次：${prevWeight}kg → 本次：${curWeight}kg)`,
+                                significance: '體重連續下降可能代表吞嚥困難、食慾不振或肌少症進展，建請關注學員的營養攝取與日常進食狀況。'
+                            });
+                        }
+                    }
+                }
+            }
+            
+            // 2. Visceral Fat alert
+            const curVis = getNum(cur.visceral_fat);
+            const prevVis = getNum(prev.visceral_fat);
+            if (curVis !== null && prevVis !== null) {
+                let isRising = curVis > prevVis;
+                if (currentIndex >= 2) {
+                    const prev2Vis = getNum(sorted[currentIndex - 2].visceral_fat);
+                    if (prev2Vis !== null && curVis > prevVis && prevVis > prev2Vis) {
+                        isRising = true;
+                    }
+                }
+                if (curVis - prevVis >= 1) {
+                    alerts.push({
+                        type: 'warning',
+                        metric: '內臟脂肪',
+                        desc: `比${monthsLabel}內臟脂肪增加 ${curVis - prevVis} 級 (${prevVis} → ${curVis})`,
+                        significance: '內臟脂肪與胰島素阻抗高度相關，是代謝症候群核心指標。藥物易改變脂肪分佈。'
+                    });
+                } else if (isRising && curVis > prevVis) {
+                    alerts.push({
+                        type: 'warning',
+                        metric: '內臟脂肪',
+                        desc: `內臟脂肪呈連續上升趨勢 (${prevVis} → ${curVis})`,
+                        significance: '內臟脂肪連續上升代表脂肪優先囤積於內臟器官周圍，高度警示胰島素阻抗與代謝症候群風險。'
+                    });
+                }
+            }
+            
+            // 3. Body Fat alert: increase > 2%
+            const curFat = getNum(cur.body_fat);
+            const prevFat = getNum(prev.body_fat);
+            if (curFat !== null && prevFat !== null) {
+                const diff = curFat - prevFat;
+                if (diff >= 2) {
+                    alerts.push({
+                        type: 'warning',
+                        metric: '體脂肪率',
+                        desc: `比${monthsLabel}體脂率增加 ${diff.toFixed(1)}% (${prevFat}% → ${curFat}%)`,
+                        significance: '常因動機缺乏與活動量低導致脂肪堆積，且體脂肪增加往往早於 BMI 的變化。'
+                    });
+                }
+            }
+            
+            // 4. Muscle Percent alert: decrease >= 1%
+            const curMus = getNum(cur.muscle_percent);
+            const prevMus = getNum(prev.muscle_percent);
+            if (curMus !== null && prevMus !== null) {
+                const diff = prevMus - curMus;
+                if (diff >= 1) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '骨骼肌率',
+                        desc: `比${monthsLabel}骨骼肌率流失 ${diff.toFixed(1)}% (${prevMus}% → ${curMus}%)`,
+                        significance: '需警戒肌少性肥胖 (Sarcopenic obesity)。若體重持平但體脂上升且骨骼肌流失，代表肌肉正被脂肪取代。'
+                    });
+                }
+            }
+            
+            // 5. 6MWT alert: decrease >= 20m
+            const curWalk = getNum(cur.walk_6m);
+            const prevWalk = getNum(prev.walk_6m);
+            if (curWalk !== null && prevWalk !== null) {
+                const diff = prevWalk - curWalk;
+                if (diff >= 20) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '6分鐘行走 (6MWT)',
+                        desc: `比${monthsLabel}距離減少 ${diff.toFixed(0)}m (${prevWalk}m → ${curWalk}m)`,
+                        significance: '心肺耐力衰退。步行距離減少 20~30 公尺以上，代表患者心肺功能與功能性活動能力發生患者可感知的實質衰退。'
+                    });
+                }
+            }
+            
+            // 6. 30s CST alert: decrease >= 2 or total < 6
+            const curStand = getNum(cur.sit_stand_30s);
+            const prevStand = getNum(prev.sit_stand_30s);
+            if (curStand !== null) {
+                if (prevStand !== null && (prevStand - curStand >= 2)) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '30秒坐站 (30s-CST)',
+                        desc: `比${monthsLabel}坐站次數減少 ${prevStand - curStand} 次 (${prevStand}次 → ${curStand}次)`,
+                        significance: '下肢肌力流失。次數急降代表下肢肌力與耐力衰退，會大幅增加跌倒與失能風險。'
+                    });
+                } else if (curStand < 6) {
+                    alerts.push({
+                        type: 'danger',
+                        metric: '30秒坐站 (30s-CST)',
+                        desc: `總次數極低，僅為 ${curStand} 次 (少於 6~8 次)`,
+                        significance: '下肢爆發力極度不足，大幅增加日常活動障礙與跌倒失能風險。'
+                    });
+                }
+            }
+            
+            // 7. Sit-ups alert: decrease >= 15%
+            const curSit = getNum(cur.sit_ups_1m);
+            const prevSit = getNum(prev.sit_ups_1m);
+            if (curSit !== null && prevSit !== null && prevSit > 0) {
+                const pct = (prevSit - curSit) / prevSit * 100;
+                if (pct >= 15) {
+                    alerts.push({
+                        type: 'warning',
+                        metric: '仰臥起坐 (1分鐘)',
+                        desc: `比${monthsLabel}核心肌力減少 ${pct.toFixed(0)}% (${prevSit}次 → ${curSit}次)`,
+                        significance: '核心肌群是維持姿勢的關鍵。久坐不動核心肌力流失迅速，易致姿勢不良及下背痛。'
+                    });
+                }
+            }
+            
+            // 8. Flexibility alert: decrease >= 2cm
+            const curFlex = getNum(cur.flexibility);
+            const prevFlex = getNum(prev.flexibility);
+            if (curFlex !== null && prevFlex !== null) {
+                const diff = prevFlex - curFlex;
+                if (diff >= 2) {
+                    alerts.push({
+                        type: 'warning',
+                        metric: '柔軟度 (坐姿體前彎)',
+                        desc: `比${monthsLabel}柔軟度退步 ${diff.toFixed(1)}cm (${prevFlex}cm → ${curFlex}cm)`,
+                        significance: '腿後肌群與下背柔軟度退步。長期缺乏活動會使關節活動度受限，影響日常步態。'
+                    });
+                }
+            }
+            
+            return alerts;
+        };
         
         const normalizeScore = (val, target, type = 'higher_better') => {
             if (!val || !target) return 0;
@@ -389,6 +748,11 @@
             const [data, setData] = useState([]);
             const [currentPage, setCurrentPage] = useState('population');
             const [isLoading, setIsLoading] = useState(false);
+            
+            const [selectedIndividualSession, setSelectedIndividualSession] = useState("");
+            const [selectedIndividualKey, setSelectedIndividualKey] = useState("");
+            const [geminiApiKey, setGeminiApiKey] = useState(localStorage.getItem("gemini_api_key") || "");
+            const [showApiKeyModal, setShowApiKeyModal] = useState(false);
             
             const processData = (rawData) => {
                 return rawData.map(row => {
@@ -443,33 +807,41 @@
 
             // --- Page 1: 族群概況 ---
             const PopulationView = () => {
-                const allDates = [...new Set(data.map(d => d.date))].sort();
-                const [selectedDates, setSelectedDates] = useState(allDates);
+                const allDates = [...new Set(data.map(d => d.session))].filter(Boolean).sort();
+                const [selectedDates, setSelectedDates] = useState([]);
+
+                useEffect(() => {
+                    if (allDates.length > 0 && selectedDates.length === 0) {
+                        setSelectedDates(allDates);
+                    }
+                }, [data]);
+
                 const toggleDate = (d) => setSelectedDates(prev => prev.includes(d) ? prev.filter(x=>x!==d) : [...prev,d]);
-                const filteredData = data.filter(d => selectedDates.length === 0 || selectedDates.includes(d.date));
+                const filteredData = data.filter(d => selectedDates.length === 0 || selectedDates.includes(d.session));
                 
                 const latestMap = new Map();
                 filteredData.forEach(d => {
                     const key = `${d.name}_${d.dob}`;
-                    if (!latestMap.has(key) || new Date(d.date) > new Date(latestMap.get(key).date)) {
+                    if (!latestMap.has(key) || d.date > latestMap.get(key).date) {
                         latestMap.set(key, d);
                     }
                 });
                 const latestRecords = Array.from(latestMap.values());
                 const totalPeople = latestRecords.length;
                 const males = latestRecords.filter(d => d.sex === '男').length;
-                const recordsWithAge = latestRecords.filter(d => typeof d.age === 'number' && d.age !== '');
-                const avgAge = recordsWithAge.length ? (recordsWithAge.reduce((a,b) => a + b.age, 0) / recordsWithAge.length).toFixed(1) : 0;
+                
+                const recordsWithAge = latestRecords.filter(d => d.age !== '' && d.age !== undefined && d.age !== null && !isNaN(parseFloat(d.age)));
+                const avgAge = recordsWithAge.length ? (recordsWithAge.reduce((a,b) => a + Number(b.age), 0) / recordsWithAge.length).toFixed(1) : 0;
                 
                 const riskSarcopenia = latestRecords.filter(d => d.sarcopenia_status === '肌少症').length;
                 const riskVisceral = latestRecords.filter(d => d.visceral_status !== '標準').length;
                 const riskObesity = latestRecords.filter(d => ['中度肥胖', '重度肥胖', '過重'].includes(d.bmi_status)).length;
-                const riskFlexibility = latestRecords.filter(d => typeof d.flexibility === 'number' && d.flexibility !== '' && d.flexibility < 20).length;
+                const riskFlexibility = latestRecords.filter(d => d.flexibility !== '' && d.flexibility !== undefined && d.flexibility !== null && !isNaN(parseFloat(d.flexibility)) && parseFloat(d.flexibility) < 20).length;
 
                 const datesForChart = selectedDates.length > 0 ? selectedDates.sort() : allDates;
-                const getAvg = (date, field) => {
-                    const dayData = data.filter(d => d.date === date && typeof d[field] === 'number' && d[field] !== '');
-                    return dayData.length ? parseFloat((dayData.reduce((a,b)=>a+b[field],0)/dayData.length).toFixed(1)) : null;
+                const getAvg = (session, field) => {
+                    const dayData = data.filter(d => d.session === session && d[field] !== '' && d[field] !== undefined && d[field] !== null && !isNaN(parseFloat(d[field])));
+                    return dayData.length ? parseFloat((dayData.reduce((a,b)=>a+Number(b[field]),0)/dayData.length).toFixed(1)) : null;
                 };
 
                 const bodyDatasets = [
@@ -497,13 +869,13 @@
                                 <div className="text-center p-3 bg-gray-50 rounded"><p className="text-gray-500 text-sm">平均年齡</p><p className="text-2xl font-bold">{avgAge} 歲</p></div>
                                 
                                 <div className="text-center p-3 bg-gray-50 rounded relative dropdown group cursor-pointer">
-                                    <p className="text-gray-500 text-sm mb-1">評估日期篩選 (可複選) ▾</p>
+                                    <p className="text-gray-500 text-sm mb-1">評估次別篩選 (可複選) ▾</p>
                                     <div className="font-bold text-lg text-blue-600">{selectedDates.length} 個</div>
                                     <div className="dropdown-content left-0 right-0 mx-auto">
                                         {allDates.map(d => (
                                             <label key={d} className="flex items-center space-x-2 p-2 hover:bg-gray-100 cursor-pointer text-left text-sm border-b">
                                                 <input type="checkbox" checked={selectedDates.includes(d)} onChange={() => toggleDate(d)} className="form-checkbox h-4 w-4 text-blue-600" />
-                                                <span>{formatDateToRoc(d)}</span>
+                                                <span>{d}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -523,15 +895,15 @@
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <InteractiveChart title="身體素質平均分析" datasets={bodyDatasets} labels={datesForChart.map(formatDateToRoc)} />
-                            <InteractiveChart title="體能表現平均分析" datasets={fitnessDatasets} labels={datesForChart.map(formatDateToRoc)} />
+                            <InteractiveChart title="身體素質平均分析" datasets={bodyDatasets} labels={datesForChart} />
+                            <InteractiveChart title="體能表現平均分析" datasets={fitnessDatasets} labels={datesForChart} />
                         </div>
                     </div>
                 );
             };
 
             // --- Page 2: 個案報告 ---
-            const IndividualReportView = () => {
+            const IndividualReportView = ({ selSession, setSelSession, selKey, setSelKey }) => {
                 // Pre-process data to resolve empty DOBs
                 const normalizedData = useMemo(() => {
                     // 1. Group all non-empty DOBs by name
@@ -563,8 +935,335 @@
                     return sessions.sort((a, b) => a.localeCompare(b));
                 }, [normalizedData]);
 
-                const [selSession, setSelSession] = useState("");
-                const [selKey, setSelKey] = useState("");
+                const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+                const [aiModalOpen, setAiModalOpen] = useState(false);
+                const [aiForm, setAiForm] = useState({ ot_comments: '', exercise_comments: '', nutrition_comments: '' });
+                const [aiSaving, setAiSaving] = useState(false);
+                const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
+
+                const handleGenerateAISuggestions = async () => {
+                    const apiKey = localStorage.getItem("gemini_api_key");
+                    if (!apiKey) {
+                        alert("⚠️ 請先點擊右上角「設定 AI 金鑰」⚙️ 按鈕設定您的 Gemini API Key！");
+                        return;
+                    }
+                    if (!current || !current.id) {
+                        alert("無效的學員資料");
+                        return;
+                    }
+
+                    setIsGeneratingAI(true);
+                    
+                    const prompt = `你是一位專業的職能治療師與健康管理專家。請根據以下學員的體適能評估數據，為他量身打造非罐頭、極具個別化且專業的建議。請嚴格遵守以下格式，且不要有任何引言、導言或贅詞，直接切入重點：
+
+1. 職能治療評語與綜合分析 (ot_comments)：
+   - 字數要求：【綜合功能分析】約 250 字，【治療師建議】約 200 字（含注意事項）。
+   - 格式必須嚴格依照以下樣式，段落分明並包含標題，且力求精煉無廢話：
+     【綜合功能分析】
+     經由本次專業職能治療體適能評估，${current.name}學員的整體體適能評分為 ${compositeScore || 0} 分，整體表現屬於[表現描述，例如：尚可、良好、待加強]。在身體組成方面，您的BMI指數顯示[體重狀況，例如：體重過重，這直接影響身體的代謝負擔]；而骨骼肌指數(SMI)顯示[SMI狀況，例如：肌肉量明顯不足，伴隨肌少症風險]，這對於維持基礎代謝率及日常活動的抗疲勞能力至關重要。
+     在功能性體能方面，六分鐘行走測試反映了您的心肺耐力，目前的表現[行走表現描述，例如：低於預測值，顯示有氧能力稍弱，容易在長距離移動或爬坡時感到氣喘與疲累]。30秒坐站測試則反映下肢肌力，[坐站表現描述，例如：目前次數偏低，顯示下肢爆發力不足，未來可能增加跌倒風險或影響如廁起身]。此外，柔軟度測試結果顯示[柔軟度表現描述，例如：關節活動度受限，長期可能導致姿勢不良或肌肉痠痛]。
+     
+     【治療師建議】
+     針對上述評估結果，建議您設定短期目標為[短期目標，例如：提升下肢肌力]，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加[日常配合行動，例如：步行機會]。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。若運動中途感頭暈、胸悶或過度氣喘，請立即停止運動並坐下休息
+
+2. 運動處方建議 (exercise_comments)：
+   - 必須只精選三樣最合適的運動處方項目（依照優先順序排列前三個，共 3 行，每行一項）。
+   - 請直接寫運動的模式，**絕對不可有任何引言或贅詞**（例如：嚴禁回傳像「針對核心極度無力與耐力限制，運動處方如下：」或「以下是運動建議：」等贅詞，直接回傳處方項目）。
+   - 格式範例如下（每行一項，不要包含任何數字序號 1. 2. 3. 或前綴符號，直接以「類別：具體內容」開始，系統會自動加上 • 子項目符號）：
+     有氧：每日快走/單車20分鐘，騎車到微喘
+     阻力：進行核心與下肢穩定訓練（如橋式與平板支撐，每組30秒，每次3組）
+     伸展：貓牛式、腿後伸展，停留15秒，勿憋氣
+
+3. 營養建議 (nutrition_comments)：
+   - 必須只精選三樣最合適的營養建議項目（依照優先順序排列前三個，共 3 行，每行一項）。
+   - 請直接寫建議的模式，**絕對不可有任何引言或贅詞**。
+   - 格式範例如下（每行一項，不要包含任何數字序號 1. 2. 3. 或前綴符號，直接以「類別：具體內容」開始，系統會自動加上 • 子項目符號）：
+     控糖：減少精緻澱粉與甜食，多吃高纖蔬菜
+     增肌：運動後30分鐘內補充足量蛋白質（茶葉蛋/無糖豆漿）
+     骨骼：每日早晚一杯奶或補充小魚乾、黑芝麻
+
+學員基本資料：
+- 姓名：${current.name}
+- 性別：${current.sex}
+- 年齡：${current.age}
+- 評估次別：${current.session}
+
+體適能評估數據：
+- BMI：${current.bmi} (${current.bmi_status})
+- 體脂率：${current.body_fat}% (${current.body_fat_status})
+- 骨骼肌率：${current.muscle_percent}% (${current.muscle_status})
+- SMI：${current.smi} (${current.sarcopenia_status})
+- 內臟脂肪：${current.visceral_fat} 級 (${current.visceral_status})
+- 30秒坐站：${current.sit_stand_30s} 次
+- 6分鐘行走距離：${current.walk_6m} m (預測值：${current.predicted_walk_6m} m)
+- 柔軟度：${current.flexibility} cm
+- 1分鐘仰臥起坐：${current.sit_ups_1m} 次
+
+請以繁體中文撰寫，並**嚴格遵守以下 JSON 格式回傳**，不要包含任何 markdown 標記（如 \`\`\`json 等）或額外文字：
+{
+  "ot_comments": "【綜合功能分析】\\n...\\n\\n【治療師建議】\\n...",
+  "exercise_comments": "有氧：每日快走/單車20分鐘，騎車到微喘\\n阻力：進行核心與下肢穩定訓練...\\n伸展：...",
+  "nutrition_comments": "控糖：...\\n增肌：...\\n骨骼：..."
+}`;
+
+                    let modelToUse = "models/gemini-1.5-flash"; // Default fallback
+                    
+                    try {
+                        console.log("Fetching available models from Gemini API...");
+                        const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                        if (modelsRes.ok) {
+                            const modelsData = await modelsRes.json();
+                            const availableModels = (modelsData.models || []).map(m => m.name);
+                            
+                            console.log("Available models for this API Key:", availableModels);
+                            
+                            const priority = [
+                                "models/gemini-3.5-flash",
+                                "models/gemini-3.5-pro",
+                                "models/gemini-3.1-flash",
+                                "models/gemini-3.1-pro",
+                                "models/gemini-3.5-flash-lite",
+                                "models/gemini-1.5-flash-latest",
+                                "models/gemini-1.5-flash",
+                                "models/gemini-1.5-pro",
+                                "models/gemini-2.5-flash",
+                                "models/gemini-2.5-pro",
+                                "models/gemini-2.0-flash"
+                            ];
+                            
+                            let found = false;
+                            for (const model of priority) {
+                                if (availableModels.includes(model)) {
+                                    modelToUse = model;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found && availableModels.length > 0) {
+                                modelToUse = availableModels[0];
+                            }
+                            console.log("Selected model to use:", modelToUse);
+                        } else {
+                            console.warn("ListModels request failed, status:", modelsRes.status);
+                        }
+                    } catch (err) {
+                        console.warn("Failed to dynamically fetch models, falling back to defaults. Error:", err);
+                    }
+
+                    // Build configs list to try
+                    const configs = [
+                        { url: `https://generativelanguage.googleapis.com/v1beta/${modelToUse}:generateContent?key=${apiKey}`, useJson: true },
+                        { url: `https://generativelanguage.googleapis.com/v1/${modelToUse}:generateContent?key=${apiKey}`, useJson: true },
+                        { url: `https://generativelanguage.googleapis.com/v1beta/${modelToUse}:generateContent?key=${apiKey}`, useJson: false },
+                        { url: `https://generativelanguage.googleapis.com/v1/${modelToUse}:generateContent?key=${apiKey}`, useJson: false },
+                        // Hard fallbacks in case dynamic list picked something unsupported
+                        { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, useJson: true },
+                        { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, useJson: false }
+                    ];
+
+                    let lastErrors = [];
+                    let successText = "";
+
+                    for (let i = 0; i < configs.length; i++) {
+                        const cfg = configs[i];
+                        try {
+                            const bodyData = {
+                                contents: [{ parts: [{ text: prompt }] }]
+                            };
+                            if (cfg.useJson) {
+                                bodyData.generationConfig = { responseMimeType: "application/json" };
+                            }
+                            
+                            const res = await fetch(cfg.url, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(bodyData)
+                            });
+
+                            if (res.ok) {
+                                const json = await res.json();
+                                successText = json.candidates[0].content.parts[0].text;
+                                break; // Success! Break out of loop.
+                            } else {
+                                const errBody = await res.text();
+                                lastErrors.push(`[配置 ${i}] 端點: ${cfg.url.split('?')[0].replace('https://generativelanguage.googleapis.com/', '')} (JSON: ${cfg.useJson}) -> HTTP ${res.status}: ${errBody}`);
+                            }
+                        } catch (err) {
+                            lastErrors.push(`[配置 ${i}] 網路錯誤: ${err.message}`);
+                        }
+                    }
+
+                    if (!successText) {
+                        let diagnostics = `❌ AI 生成失敗。請檢查您的金鑰是否有效或可連線。\n\n各個嘗試配置的錯誤訊息如下：\n`;
+                        diagnostics += lastErrors.join("\n\n") + `\n\n`;
+                        
+                        if (apiKey) {
+                            diagnostics += `金鑰診斷：長度為 ${apiKey.length} 個字元，開頭為 "${apiKey.substring(0, 6)}"，結尾為 "...${apiKey.substring(apiKey.length - 6)}"\n`;
+                            if (!apiKey.startsWith("AIzaSy")) {
+                                diagnostics += `⚠️ 警示：標準的 Google Gemini API 金鑰開頭通常為 "AIzaSy"。您的金鑰開合不符，請確認是否複製錯誤。\n`;
+                            }
+                        }
+                        
+                        try {
+                            const debugRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                            if (debugRes.ok) {
+                                const debugData = await debugRes.json();
+                                const names = (debugData.models || []).map(m => m.name.replace("models/", ""));
+                                diagnostics += `\n此金鑰目前可用的模型清單 (ListModels)：\n${names.join("\n") || "無可用模型"}`;
+                            } else {
+                                const debugText = await debugRes.text();
+                                diagnostics += `\n❌ 查詢可用模型失敗 (ListModels HTTP ${debugRes.status})：\n${debugText}`;
+                            }
+                        } catch (debugErr) {
+                            diagnostics += `\n❌ 無法連線至 ListModels API：${debugErr.message}`;
+                        }
+                        
+                        alert(diagnostics);
+                        setIsGeneratingAI(false);
+                        return;
+                    }
+
+                    try {
+                        let cleanText = successText.trim();
+                        if (cleanText.startsWith("```")) {
+                            cleanText = cleanText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+                        }
+                        
+                        const parsedData = JSON.parse(cleanText.trim());
+                        
+                        setAiForm({
+                            ot_comments: parsedData.ot_comments || '',
+                            exercise_comments: parsedData.exercise_comments || '',
+                            nutrition_comments: parsedData.nutrition_comments || ''
+                        });
+                        setAiModalOpen(true);
+                    } catch (err) {
+                        console.error("JSON parsing error on text:", successText, err);
+                        alert("❌ AI 回傳成功，但解析 JSON 格式失敗。請重試一次。");
+                    } finally {
+                        setIsGeneratingAI(false);
+                    }
+                };
+
+                const handleSaveAISuggestions = async () => {
+                    setAiSaving(true);
+                    try {
+                        const payload = {
+                            password: apiPass,
+                            id: current.id,
+                            '唯一識別碼': current.id,
+                            
+                            bed_number: current.bed_number,
+                            '床號': current.bed_number,
+                            
+                            name: current.name,
+                            '姓名': current.name,
+                            
+                            sex: current.sex,
+                            '性別': current.sex,
+                            
+                            dob: current.dob,
+                            '出生年月日': current.dob,
+                            
+                            age: current.age !== '' ? Number(current.age) : '',
+                            '年齡': current.age !== '' ? Number(current.age) : '',
+                            
+                            session: current.session,
+                            '評估次別': current.session,
+                            
+                            date: current.date,
+                            eval_date: current.date,
+                            '評估日期': current.date,
+                            
+                            height: current.height,
+                            '身高(cm)': current.height,
+                            
+                            weight: current.weight,
+                            '體重(kg)': current.weight,
+                            
+                            bmi: current.bmi,
+                            'BMI': current.bmi,
+                            
+                            body_fat: current.body_fat,
+                            '體脂肪(%)': current.body_fat,
+                            
+                            muscle_percent: current.muscle_percent,
+                            '骨骼肌(%)': current.muscle_percent,
+                            
+                            muscle_kg: current.muscle_kg,
+                            '骨骼肌(kg)': current.muscle_kg,
+                            
+                            smi: current.smi,
+                            'SMI': current.smi,
+                            
+                            bmr: current.bmr,
+                            '基礎代謝(kcal)': current.bmr,
+                            
+                            body_age: current.body_age,
+                            '體年齡': current.body_age,
+                            
+                            visceral_fat: current.visceral_fat,
+                            '內臟脂肪': current.visceral_fat,
+                            
+                            waist: current.waist,
+                            '腰圍(cm)': current.waist,
+                            
+                            hip: current.hip,
+                            '臀圍(cm)': current.hip,
+                            
+                            whr: current.whr,
+                            '腰臀比': current.whr,
+                            
+                            sit_ups_1m: current.sit_ups_1m,
+                            '一分鐘仰臥起坐(次)': current.sit_ups_1m,
+                            
+                            walk_6m: current.walk_6m,
+                            '六分鐘行走測驗(m)': current.walk_6m,
+                            
+                            flexibility: current.flexibility,
+                            '柔軟度(cm)': current.flexibility,
+                            
+                            sit_stand_30s: current.sit_stand_30s,
+                            '30秒坐站測驗(次)': current.sit_stand_30s,
+
+                            ot_comments: aiForm.ot_comments,
+                            '職能治療評語與綜合分析': aiForm.ot_comments,
+                            '職能治療評語': aiForm.ot_comments,
+                            
+                            exercise_comments: aiForm.exercise_comments,
+                            '運動處方建議': aiForm.exercise_comments,
+                            '運動建議': aiForm.exercise_comments,
+                            
+                            nutrition_comments: aiForm.nutrition_comments,
+                            '營養建議': aiForm.nutrition_comments,
+                            '營養處方建議': aiForm.nutrition_comments
+                        };
+
+                        const res = await fetch(API_URL, {
+                            method: "POST",
+                            headers: { "Content-Type": "text/plain;charset=utf-8" },
+                            body: JSON.stringify(payload)
+                        });
+                        const json = await res.json();
+                        if (json.status === 'success') {
+                            // Cache locally in case spreadsheet columns are not configured
+                            localStorage.setItem(`ot_comments_${current.id}_${current.session}`, aiForm.ot_comments);
+                            localStorage.setItem(`exercise_comments_${current.id}_${current.session}`, aiForm.exercise_comments);
+                            localStorage.setItem(`nutrition_comments_${current.id}_${current.session}`, aiForm.nutrition_comments);
+
+                            alert("✅ AI 建議已成功儲存至試算表與更新個案報告！");
+                            fetchData(); // reload dashboard data
+                            setAiModalOpen(false);
+                        } else {
+                            alert("❌ 儲存失敗：" + json.message);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert("儲存時發生錯誤");
+                    } finally {
+                        setAiSaving(false);
+                    }
+                };
 
                 // Default to the latest session
                 useEffect(() => {
@@ -613,8 +1312,8 @@
 
                 const radarScores = current.id ? [
                     normalizeScore(current.bmi, 22, 'lower_better'), normalizeScore(current.smi, 7.0, 'higher_better'),
-                    normalizeScore(current.walk_6m, current.predicted_walk_6m, 'higher_better'), normalizeScore(current.sit_stand_30s, 15, 'higher_better'),
-                    normalizeScore(current.flexibility, 30, 'higher_better'), normalizeScore(current.sit_ups_1m, 25, 'higher_better'),
+                    normalizeScore(current.walk_6m, current.predicted_walk_6m, 'higher_better'), getNormScore('sit_stand', current.sit_stand_30s, current.sex, current.age),
+                    getNormScore('flexibility', current.flexibility, current.sex, current.age), getNormScore('sit_ups', current.sit_ups_1m, current.sex, current.age),
                 ] : [0,0,0,0,0,0];
                 
                 const fitnessScores = radarScores.slice(2, 6).filter(s => s > 0);
@@ -642,6 +1341,11 @@
                     (current.walk_6m < current.predicted_walk_6m ? {s: `低於預測(${current.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'})
                 ) : {};
 
+                // Calculate warnings for the selected person's current record
+                const clinicalAlerts = useMemo(() => {
+                    return getClinicalAlerts(personRecords, current);
+                }, [personRecords, current]);
+
                 const generateAnalysis = () => {
                     const statusText = compositeScore >= 80 ? '優良' : compositeScore >= 60 ? '尚可' : '待加強';
                     const bmiAnalysis = current.bmi !== '' && current.bmi !== undefined ? (current.bmi > 24 ? "過重" : current.bmi < 18.5 ? "過輕" : "標準") : "未登錄";
@@ -656,7 +1360,7 @@
 【治療師建議】
 針對上述評估結果，建議您設定短期目標為提升${current.smi && current.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${current.walk_6m && current.predicted_walk_6m && current.walk_6m < current.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
                 };
-                const otAnalysis = current.id ? generateAnalysis() : "";
+                const otAnalysis = current.ot_comments || (current.id ? generateAnalysis() : "");
 
                 const downloadPDF = () => {
                     const el = document.getElementById('report-container');
@@ -668,6 +1372,43 @@
                         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
                     };
                     html2pdf().from(el).set(opt).save();
+                };
+
+                const downloadSessionPDFs = (sessionVal) => {
+                    if (!sessionVal) {
+                        alert("無有效的評估次別");
+                        return;
+                    }
+                    const sessionRecords = normalizedData.filter(d => d.session === sessionVal);
+                    if (sessionRecords.length === 0) {
+                        alert("該次別無資料可下載");
+                        return;
+                    }
+                    
+                    setIsGeneratingBatch(true);
+                    
+                    setTimeout(() => {
+                        const el = document.getElementById('batch-pdf-container');
+                        if (!el) {
+                            setIsGeneratingBatch(false);
+                            alert("無法取得 PDF 生成容器");
+                            return;
+                        }
+                        const opt = {
+                            margin: 5,
+                            filename: `OT體適能評估_${sessionVal}_全體學員報告.pdf`,
+                            image: { type: 'jpeg', quality: 0.98 },
+                            html2canvas: { scale: 3, useCORS: true }, 
+                            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                        };
+                        html2pdf().from(el).set(opt).save().then(() => {
+                            setIsGeneratingBatch(false);
+                        }).catch(err => {
+                            console.error(err);
+                            alert("生成全體 PDF 報告失敗");
+                            setIsGeneratingBatch(false);
+                        });
+                    }, 2500); // Give Chart.js plenty of time to render all charts
                 };
 
                 const exportSessionDataToExcel = (sessionVal) => {
@@ -708,7 +1449,10 @@
                         '一分鐘仰臥起坐(次)': d.sit_ups_1m,
                         '六分鐘行走測驗(m)': d.walk_6m,
                         '柔軟度(cm)': d.flexibility,
-                        '30秒坐站測驗(次)': d.sit_stand_30s
+                        '30秒坐站測驗(次)': d.sit_stand_30s,
+                        '職能治療評語與綜合分析': d.ot_comments || '',
+                        '運動處方建議': d.exercise_comments || '',
+                        '營養建議': d.nutrition_comments || ''
                     }));
                     
                     // Generate workbook
@@ -760,12 +1504,47 @@
                                 </label>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => exportSessionDataToExcel(current.session)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow flex items-center gap-2">
-                                    <i className="fas fa-file-excel"></i>下載當次全部資料 ({current.session ? formatDateToRoc(current.session) : ""})
+                                <button 
+                                    onClick={() => downloadSessionPDFs(selSession)} 
+                                    disabled={isGeneratingBatch} 
+                                    className={`bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow flex items-center gap-2 transition ${isGeneratingBatch ? 'bg-gray-400 cursor-not-allowed' : ''}`}
+                                >
+                                    {isGeneratingBatch ? (
+                                        <>
+                                            <i className="fas fa-spinner animate-spin"></i>
+                                            PDF 生成中...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fas fa-file-pdf"></i>下載當次全體 PDF 報告
+                                        </>
+                                    )}
                                 </button>
-                                <button onClick={downloadPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2"><i className="fas fa-print mr-2"></i>下載/列印</button>
+                                <button onClick={downloadPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2"><i className="fas fa-print mr-2"></i>下載/列印本案</button>
                             </div>
                         </div>
+
+                        {clinicalAlerts.length > 0 && (
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 no-print shadow-sm">
+                                <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
+                                    <i className="fas fa-exclamation-triangle text-red-500 text-sm"></i>
+                                    臨床退化警示 (本學員近3-6個月出現以下退化)
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                    {clinicalAlerts.map((a, i) => (
+                                        <div key={i} className="bg-white p-2 rounded border border-red-100 flex flex-col justify-between">
+                                            <div>
+                                                <strong className="text-red-700 block mb-0.5">{a.metric}</strong>
+                                                <p className="text-gray-800 mb-1">{a.desc}</p>
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 bg-slate-50 p-1.5 rounded">
+                                                <strong>意義：</strong>{a.significance}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div id="report-container" className="max-w-[210mm] mx-auto bg-white shadow-lg">
                             {/* Page 1 */}
@@ -824,7 +1603,12 @@
                                         </table>
                                         
                                         <div className="mt-auto bg-orange-50 p-2 rounded flex-grow flex flex-col text-xs leading-relaxed border border-orange-100">
-                                            <h4 className="font-bold text-orange-800 mb-1 border-b border-orange-200 pb-1 text-base"><i className="fas fa-user-md mr-1"></i>OT 綜合評語與建議</h4>
+                                            <h4 className="font-bold text-orange-800 mb-1 border-b border-orange-200 pb-1 text-base flex justify-between items-center">
+                                                <span><i className="fas fa-user-md mr-1"></i>OT 綜合評語與建議</span>
+                                                <button onClick={handleGenerateAISuggestions} className="no-print bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 font-bold transition">
+                                                    <i className="fas fa-magic"></i> AI 智慧生成
+                                                </button>
+                                            </h4>
                                             
                                             <div className="mb-2 text-justify whitespace-pre-line leading-snug flex-grow text-[11px]">
                                                 {otAnalysis}
@@ -836,21 +1620,29 @@
                                                         <span><i className="fas fa-dumbbell mr-1"></i>運動處方</span>
                                                         <span className="text-[10px] bg-green-100 px-1 rounded">頻率: 每週3次</span>
                                                     </strong>
-                                                    <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
-                                                        {current.sarcopenia_status === '肌少症' && <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li>}
-                                                        {current.walk_6m && current.predicted_walk_6m && current.walk_6m < current.predicted_walk_6m && <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li>}
-                                                        {current.flexibility && current.flexibility < 20 && <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li>}
-                                                        {current.sarcopenia_status && current.sarcopenia_status !== '肌少症' && current.walk_6m && current.predicted_walk_6m && current.walk_6m >= current.predicted_walk_6m && <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li>}
-                                                        <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
-                                                    </ul>
+                                                    {current.exercise_comments ? (
+                                                        renderListComments(current.exercise_comments)
+                                                    ) : (
+                                                        <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                            {current.sarcopenia_status === '肌少症' ? <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li> : null}
+                                                            {(current.walk_6m && current.predicted_walk_6m && current.walk_6m < current.predicted_walk_6m) ? <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li> : null}
+                                                            {(current.flexibility && current.flexibility < 20) ? <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li> : null}
+                                                            {(current.sarcopenia_status && current.sarcopenia_status !== '肌少症' && current.walk_6m && current.predicted_walk_6m && current.walk_6m >= current.predicted_walk_6m) ? <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li> : null}
+                                                            <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
+                                                        </ul>
+                                                    )}
                                                 </div>
                                                 <div className="bg-white p-1.5 rounded border border-red-200">
                                                     <strong className="text-red-700 flex items-center mb-1 text-sm"><i className="fas fa-utensils mr-1"></i>營養建議</strong>
-                                                    <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
-                                                        {current.bmi && current.bmi > 24 && <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li>}
-                                                        {current.smi !== '' ? (current.smi < 7 ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>) : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
-                                                        <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
-                                                    </ul>
+                                                    {current.nutrition_comments ? (
+                                                        renderListComments(current.nutrition_comments)
+                                                    ) : (
+                                                        <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                            {(current.bmi && current.bmi > 24) ? <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li> : null}
+                                                            {current.smi !== '' ? (current.smi < 7 ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>) : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
+                                                            <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
+                                                        </ul>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -872,6 +1664,283 @@
                                 </div>
                             </div>
                         </div>
+
+                        {/* Gemini AI Suggestions Modal */}
+                        {aiModalOpen && (
+                            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 max-w-2xl w-full animate-scale-up">
+                                    <div className="flex justify-between items-center border-b pb-3 mb-4">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                            <i className="fas fa-magic text-blue-600"></i>
+                                            Gemini AI 智慧生成評估與建議 (可微調)
+                                        </h3>
+                                        <button onClick={() => setAiModalOpen(false)} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">1. 職能治療評語與綜合分析</label>
+                                            <textarea 
+                                                rows="5"
+                                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs leading-relaxed font-sans"
+                                                value={aiForm.ot_comments}
+                                                onChange={(e) => setAiForm({ ...aiForm, ot_comments: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">2. 運動處方建議</label>
+                                                <textarea 
+                                                    rows="5"
+                                                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs leading-relaxed font-sans"
+                                                    value={aiForm.exercise_comments}
+                                                    onChange={(e) => setAiForm({ ...aiForm, exercise_comments: e.target.value })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">3. 營養建議</label>
+                                                <textarea 
+                                                    rows="5"
+                                                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs leading-relaxed font-sans"
+                                                    value={aiForm.nutrition_comments}
+                                                    onChange={(e) => setAiForm({ ...aiForm, nutrition_comments: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 justify-end pt-2 border-t">
+                                            <button onClick={() => setAiModalOpen(false)} className="px-4 py-2 border rounded-lg hover:bg-slate-50 text-sm">關閉</button>
+                                            <button 
+                                                onClick={handleSaveAISuggestions} 
+                                                disabled={aiSaving} 
+                                                className={`px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow flex items-center gap-2 ${aiSaving ? 'bg-gray-400 cursor-not-allowed' : ''}`}
+                                            >
+                                                {aiSaving ? (
+                                                    <>
+                                                        <i className="fas fa-spinner animate-spin"></i>
+                                                        儲存中...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <i className="fas fa-cloud-upload-alt"></i>
+                                                        儲存並上傳至雲端
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Generating AI loading overlay */}
+                        {isGeneratingAI && (
+                            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4">
+                                <div className="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center text-center max-w-sm">
+                                    <i className="fas fa-circle-notch text-4xl text-blue-600 animate-spin mb-4"></i>
+                                    <h3 className="font-bold text-slate-800 mb-2">Gemini AI 正在觀察學員數據...</h3>
+                                    <p className="text-xs text-gray-500">正在生成個別化的職能評語、運動與營養建議，請稍候...</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Batch PDF loading overlay */}
+                        {isGeneratingBatch && (
+                            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4">
+                                <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center text-center max-w-md animate-scale-up">
+                                    <i className="fas fa-file-pdf text-5xl text-emerald-600 animate-bounce mb-4"></i>
+                                    <h3 className="font-bold text-lg text-slate-800 mb-2">正在批次生成全體學員 PDF 報告...</h3>
+                                    <p className="text-sm text-gray-500 mb-4">正在渲染與繪製該期別所有學員的體適能圖表，這可能需要數秒鐘，請勿關閉視窗。</p>
+                                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                        <div className="bg-emerald-600 h-full animate-pulse" style={{ width: '100%' }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Batch printing container (rendered in DOM to ensure correct layouts, but layered behind viewport) */}
+                        {isGeneratingBatch && (
+                            <div style={{ position: 'absolute', left: 0, top: 0, width: '210mm', zIndex: -100, pointerEvents: 'none' }}>
+                                <div id="batch-pdf-container" style={{ width: '210mm', background: 'white' }}>
+                                    {peopleInSession.map((p, idx) => {
+                                        // For each student in this session, resolve their current record and their history
+                                        const key = `${p.name}_${p.dob}`;
+                                        const pRecords = normalizedData.filter(r => r.name === p.name && (r.dob || '') === (p.dob || '')).sort((a,b) => a.date.localeCompare(b.date));
+                                        const pCurrent = pRecords.find(r => r.session === selSession) || pRecords[pRecords.length - 1];
+                                        
+                                        if (!pCurrent.id) return null;
+
+                                        // Run all calculations for this student
+                                        const pRadarScores = [
+                                            normalizeScore(pCurrent.bmi, 22, 'lower_better'), normalizeScore(pCurrent.smi, 7.0, 'higher_better'),
+                                            normalizeScore(pCurrent.walk_6m, pCurrent.predicted_walk_6m, 'higher_better'), getNormScore('sit_stand', pCurrent.sit_stand_30s, pCurrent.sex, pCurrent.age),
+                                            getNormScore('flexibility', pCurrent.flexibility, pCurrent.sex, pCurrent.age), getNormScore('sit_ups', pCurrent.sit_ups_1m, pCurrent.sex, pCurrent.age),
+                                        ];
+                                        
+                                        const pFitnessScores = pRadarScores.slice(2, 6).filter(s => s > 0);
+                                        const pFitnessScore = pFitnessScores.length > 0 ? (pFitnessScores.reduce((a, b) => a + b, 0) / pFitnessScores.length) : 0;
+                                        
+                                        const pBodyScores = pRadarScores.slice(0, 2).filter(s => s > 0);
+                                        const pBodyScore = pBodyScores.length > 0 ? (pBodyScores.reduce((a, b) => a + b, 0) / pBodyScores.length) : 0;
+                                        
+                                        let pCompositeScore = 0;
+                                        if (pFitnessScore > 0 && pBodyScore > 0) {
+                                            pCompositeScore = Math.round(pFitnessScore * 0.6 + pBodyScore * 0.4);
+                                        } else if (pFitnessScore > 0) {
+                                            pCompositeScore = Math.round(pFitnessScore);
+                                        } else if (pBodyScore > 0) {
+                                            pCompositeScore = Math.round(pBodyScore);
+                                        }
+
+                                        const pRadarData = { labels: ['BMI', 'SMI', '心肺', '下肢', '柔軟度', '核心'], datasets: [{ label: '分數', data: pRadarScores, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] };
+                                        const pSitStandStd = getStandard('sit_stand', pCurrent.sit_stand_30s, pCurrent.sex, pCurrent.age);
+                                        const pFlexStd = getStandard('flexibility', pCurrent.flexibility, pCurrent.sex, pCurrent.age);
+                                        const pSitUpsStd = getStandard('sit_ups', pCurrent.sit_ups_1m, pCurrent.sex, pCurrent.age);
+                                        const pWalkStd = (!pCurrent.walk_6m || !pCurrent.predicted_walk_6m) ? {s: "-", c: ""} :
+                                            (pCurrent.walk_6m < pCurrent.predicted_walk_6m ? {s: `低於預測(${pCurrent.predicted_walk_6m})`, c: 'text-red-600'} : {s: "佳", c: 'text-green-600'});
+
+                                        const pGenerateAnalysis = () => {
+                                            const statusText = pCompositeScore >= 80 ? '優良' : pCompositeScore >= 60 ? '尚可' : '待加強';
+                                            const bmiAnalysis = pCurrent.bmi !== '' && pCurrent.bmi !== undefined ? (pCurrent.bmi > 24 ? "過重" : pCurrent.bmi < 18.5 ? "過輕" : "標準") : "未登錄";
+                                            const muscleText = pCurrent.smi !== '' && pCurrent.smi !== undefined ? (pCurrent.smi < 7 ? "肌肉量明顯不足，伴隨肌少症風險" : "肌肉量維持在良好水平") : "未登錄";
+                                            return `【綜合功能分析】\n經由本次專業職能治療體適能評估，${pCurrent.name}學員的整體體適能評分為 ${pCompositeScore ? pCompositeScore + " 分" : "未評分"}，整體表現屬於${pCompositeScore ? statusText : "待評估"}。\n在身體組成方面，您的BMI指數顯示體重${bmiAnalysis}，這直接影響身體的代謝負擔；而骨骼肌指數(SMI)顯示${muscleText}，這對於維持基礎代謝率及日常活動的抗疲勞能力至關重要。\n\n在功能性體能方面，六分鐘行走測試反映了您的心肺耐力，目前的表現${!pCurrent.walk_6m || !pCurrent.predicted_walk_6m ? "未測試" : (pCurrent.walk_6m < pCurrent.predicted_walk_6m ? "低於預測值，顯示有氧能力稍弱，容易在長距離移動或爬坡時感到氣喘與疲累" : "優於預測值，顯示具備良好的心肺循環效率，能應付較高強度的活動")}。30秒坐站測試則反映下肢肌力，${!pCurrent.sit_stand_30s ? "未測試" : (pSitStandStd.status && pSitStandStd.status.includes('低於') ? "目前次數偏低，顯示下肢爆發力不足，未來可能增加跌倒風險或影響如廁起身" : "目前表現穩定，顯示下肢功能足以應付日常生活轉位需求")}。此外，柔軟度測試結果顯示${!pCurrent.flexibility ? "未測試" : (pFlexStd.status && (pFlexStd.status.includes('差') || pFlexStd.status.includes('不好')) ? "關節活動度受限，長期可能導致姿勢不良或肌肉痠痛" : "關節活動範圍良好，有助於動作的流暢性")}。\n\n【治療師建議】\n針對上述評估結果，建議您設定短期目標為提升${pCurrent.smi && pCurrent.smi < 7 ? "下肢肌力" : "心肺耐力"}，長期目標則為建立規律的運動習慣以預防退化。職能治療師建議您參考下方的個別化運動處方，並在日常生活中增加${pCurrent.walk_6m && pCurrent.predicted_walk_6m && pCurrent.walk_6m < pCurrent.predicted_walk_6m ? "步行機會" : "伸展頻率"}。透過持續的介入與追蹤，我們預期能有效提升您的生活品質與健康壽命。`;
+                                        };
+                                        const pOtAnalysis = pCurrent.ot_comments || pGenerateAnalysis();
+                                        const pDates = pRecords.map(r => r.date);
+
+                                        const pChartGroup1 = [
+                                            { label: '體重', data: pRecords.map(r=>r.weight !== '' && r.weight !== undefined ? r.weight : null), borderColor: '#ef4444' },
+                                            { label: '體脂率', data: pRecords.map(r=>r.body_fat !== '' && r.body_fat !== undefined ? r.body_fat : null), borderColor: '#f59e0b' },
+                                            { label: '骨骼肌', data: pRecords.map(r=>r.muscle_percent !== '' && r.muscle_percent !== undefined ? r.muscle_percent : null), borderColor: '#10b981' }
+                                        ];
+                                        const pChartGroup2 = [
+                                            { label: '內臟脂肪', data: pRecords.map(r=>r.visceral_fat !== '' && r.visceral_fat !== undefined ? r.visceral_fat : null), borderColor: '#2563eb' },
+                                            { label: '柔軟度', data: pRecords.map(r=>r.flexibility !== '' && r.flexibility !== undefined ? r.flexibility : null), borderColor: '#06b6d4' }
+                                        ];
+                                        const pChartGroup3 = [
+                                            { label: '30秒坐站', data: pRecords.map(r=>r.sit_stand_30s !== '' && r.sit_stand_30s !== undefined ? r.sit_stand_30s : null), borderColor: '#ec4899' },
+                                            { label: '仰臥起坐', data: pRecords.map(r=>r.sit_ups_1m !== '' && r.sit_ups_1m !== undefined ? r.sit_ups_1m : null), borderColor: '#f59e0b' }
+                                        ];
+                                        const pChartGroup4 = [
+                                            { label: '6分鐘行走', data: pRecords.map(r=>r.walk_6m !== '' && r.walk_6m !== undefined ? r.walk_6m : null), borderColor: '#8b5cf6' }
+                                        ];
+
+                                        return (
+                                            <div key={idx} className="batch-student-report-block">
+                                                {/* Page 1 */}
+                                                <div className="pdf-page p-8 flex flex-col items-stretch" style={{ height: '275mm', width: '100%', overflow: 'hidden', pageBreakAfter: 'always', position: 'relative', background: 'white' }}>
+                                                    <div className="border-b-4 border-blue-600 pb-2 mb-2 text-center">
+                                                        <h1 className="text-3xl font-bold text-gray-800">體適能評估與介入建議書</h1>
+                                                    </div>
+                                                    <div className="bg-blue-50 p-2 rounded mb-2 grid grid-cols-5 gap-2 text-center text-sm border border-blue-100">
+                                                        <div><p className="text-gray-500 text-xs">評估日期</p><b>{formatDateToRoc(pCurrent.date)}</b></div>
+                                                        <div><p className="text-gray-500 text-xs">床號</p><b>{pCurrent.bed_number||"未填"}</b></div>
+                                                        <div><p className="text-gray-500 text-xs">姓名</p><b className="text-lg">{pCurrent.name}</b></div>
+                                                        <div><p className="text-gray-500 text-xs">性別/年齡</p><b>{pCurrent.sex} / {pCurrent.age}歲</b></div>
+                                                        <div><p className="text-gray-500 text-xs">出生年月日</p><b>{pCurrent.dob ? formatDateToRoc(pCurrent.dob) : "未填"}</b></div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4 mb-2 flex-grow items-stretch">
+                                                        {/* Left Column: Body metrics */}
+                                                        <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
+                                                            <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">身體素質表現</h3>
+                                                            <table className="w-full text-xs border border-gray-300 text-center mb-2">
+                                                                <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">標準/評語</th></tr></thead>
+                                                                <tbody>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.height === 'number' && pCurrent.height !== '') ? pCurrent.height.toFixed(1) : "-"} / {(typeof pCurrent.weight === 'number' && pCurrent.weight !== '') ? pCurrent.weight.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.bmi === 'number' && pCurrent.bmi !== '') ? pCurrent.bmi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{pCurrent.bmi_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.body_fat === 'number' && pCurrent.body_fat !== '') ? pCurrent.body_fat.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_fat_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.muscle_percent === 'number' && pCurrent.muscle_percent !== '') ? pCurrent.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.muscle_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.smi === 'number' && pCurrent.smi !== '') ? pCurrent.smi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{pCurrent.sarcopenia_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.visceral_fat === 'number' && pCurrent.visceral_fat !== '') ? pCurrent.visceral_fat.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap text-red-500">{pCurrent.visceral_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_age || "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_age && pCurrent.age ? (pCurrent.body_age > pCurrent.age ? `+${pCurrent.body_age - pCurrent.age} (老化)` : `-${pCurrent.age - pCurrent.body_age} (年輕)`) : "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{pCurrent.bmr ? Number(pCurrent.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.bmr_status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">腰圍/臀圍</td><td className="border p-1 whitespace-nowrap">{pCurrent.waist ? Number(pCurrent.waist).toFixed(1) : "-"}/{pCurrent.hip ? Number(pCurrent.hip).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">cm</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.whr === 'number' && pCurrent.whr !== '') ? pCurrent.whr.toFixed(2) : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.whr_status || "-"} {pCurrent.whr ? `(標準: ${pCurrent.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
+                                                                </tbody>
+                                                            </table>
+                                                            
+                                                            <div className="mt-1 flex-grow flex flex-col items-center justify-center border rounded p-2 relative h-full">
+                                                                <div className="w-full flex-grow relative min-h-[150px]"><Radar data={pRadarData} options={{ animation: false, maintainAspectRatio: false, scales: { r: { min: 0, max: 120, ticks: { display: false } } }, plugins: { legend: { display: false } } }} /></div>
+                                                                <div className="absolute bottom-1 bg-white/80 px-2 rounded">
+                                                                    <div className="text-xs text-gray-500 text-center">綜合體適能分數</div>
+                                                                    <div className="text-4xl font-bold text-blue-600 text-center">{pCompositeScore}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Right Column: Physical performance & recommendations */}
+                                                        <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
+                                                            <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">體能表現評估</h3>
+                                                            <table className="w-full text-xs border border-gray-300 text-center mb-2">
+                                                                <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">評語</th></tr></thead>
+                                                                <tbody>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.sit_stand_30s === 'number' && pCurrent.sit_stand_30s !== '') ? pCurrent.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pSitStandStd.color || ""}`}>{pSitStandStd.status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.walk_6m === 'number' && pCurrent.walk_6m !== '') ? pCurrent.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pWalkStd.c || ""}`}>{pWalkStd.s || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.flexibility === 'number' && pCurrent.flexibility !== '') ? pCurrent.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pFlexStd.color || ""}`}>{pFlexStd.status || "-"}</td></tr>
+                                                                    <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.sit_ups_1m === 'number' && pCurrent.sit_ups_1m !== '') ? pCurrent.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pSitUpsStd.color || ""}`}>{pSitUpsStd.status || "-"}</td></tr>
+                                                                </tbody>
+                                                            </table>
+                                                            
+                                                            <div className="mt-auto bg-orange-50 p-2 rounded flex-grow flex flex-col text-xs leading-relaxed border border-orange-100">
+                                                                <h4 className="font-bold text-orange-800 mb-1 border-b border-orange-200 pb-1 text-base"><i className="fas fa-user-md mr-1"></i>OT 綜合評語與建議</h4>
+                                                                <div className="mb-2 text-justify whitespace-pre-line leading-snug flex-grow text-[11px]">
+                                                                    {pOtAnalysis}
+                                                                </div>
+
+                                                                <div className="grid grid-cols-1 gap-1.5 mt-1">
+                                                                    <div className="bg-white p-1.5 rounded border border-green-200">
+                                                                        <strong className="text-green-700 flex items-center mb-1 text-sm justify-between">
+                                                                            <span><i className="fas fa-dumbbell mr-1"></i>運動處方</span>
+                                                                            <span className="text-[10px] bg-green-100 px-1 rounded">頻率: 每週3次</span>
+                                                                        </strong>
+                                                                        {pCurrent.exercise_comments ? (
+                                                                            renderListComments(pCurrent.exercise_comments)
+                                                                        ) : (
+                                                                            <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                                                {pCurrent.sarcopenia_status === '肌少症' ? <li><strong>阻力：</strong>彈力帶胸推、深蹲 (3組x10次)，增加肌肉量。</li> : null}
+                                                                                {(pCurrent.walk_6m && pCurrent.predicted_walk_6m && pCurrent.walk_6m < pCurrent.predicted_walk_6m) ? <li><strong>有氧：</strong>快走/單車 (20分/次)，強度自覺稍微喘。</li> : null}
+                                                                                {(pCurrent.flexibility && pCurrent.flexibility < 20) ? <li><strong>伸展：</strong>貓牛式、腿後伸展，停留15秒，勿憋氣。</li> : null}
+                                                                                {(pCurrent.sarcopenia_status && pCurrent.sarcopenia_status !== '肌少症' && pCurrent.walk_6m && pCurrent.predicted_walk_6m && pCurrent.walk_6m >= pCurrent.predicted_walk_6m) ? <li><strong>維持：</strong>保持現有活動，可嘗試間歇運動增加強度。</li> : null}
+                                                                                <li className="text-gray-500 mt-0.5 pt-0.5 border-t border-dashed"><strong>注意：</strong>運動時若感頭暈心悸請立即停止並休息。</li>
+                                                                            </ul>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="bg-white p-1.5 rounded border border-red-200">
+                                                                        <strong className="text-red-700 flex items-center mb-1 text-sm"><i className="fas fa-utensils mr-1"></i>營養建議</strong>
+                                                                        {pCurrent.nutrition_comments ? (
+                                                                            renderListComments(pCurrent.nutrition_comments)
+                                                                        ) : (
+                                                                            <ul className="list-disc pl-4 space-y-0.5 text-gray-700 text-[11px]">
+                                                                                {(pCurrent.bmi && pCurrent.bmi > 24) ? <li><strong>控糖：</strong>減少含糖飲料，精緻澱粉減半，多吃高纖蔬菜。</li> : null}
+                                                                                {pCurrent.smi !== '' ? (pCurrent.smi < 7 ? <li><strong>增肌：</strong>運動後30分內補充蛋白質(豆漿/茶葉蛋)。</li> : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>) : <li><strong>均衡：</strong>每餐蔬菜大於拳頭大，每日飲水2000cc。</li>}
+                                                                                <li><strong>骨骼：</strong>每日早晚一杯奶或補充小魚乾、黑芝麻。</li>
+                                                                            </ul>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Page 2 */}
+                                                <div className="pdf-page p-8 relative" style={{ height: '275mm', width: '100%', overflow: 'hidden', pageBreakAfter: idx === peopleInSession.length - 1 ? 'auto' : 'always', position: 'relative', background: 'white' }}>
+                                                    <div className="border-b-4 border-gray-600 pb-4 mb-6 text-center">
+                                                        <h1 className="text-3xl font-bold text-gray-800">歷程追蹤 analysis 報告</h1>
+                                                        <p className="text-gray-500 mt-2">學員: {pCurrent.name} ( {formatDateToRoc(pDates[0])} ~ {formatDateToRoc(pDates[pDates.length-1])} )</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-6 h-[800px]">
+                                                        <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={pChartGroup1} labels={pDates.map(formatDateToRoc)} initialSelected={['體重', '骨骼肌']} options={{ animation: false }} />
+                                                        <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={pChartGroup2} labels={pDates.map(formatDateToRoc)} initialSelected={['內臟脂肪']} options={{ animation: false }} />
+                                                        <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={pChartGroup3} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                        <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={pChartGroup4} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
             };
@@ -883,7 +1952,8 @@
                     dob: '', age: '', sex: '男',
                     height: '', weight: '', waist: '', hip: '', 
                     body_fat: '', muscle_percent: '', visceral_fat: '', body_age: '', bmr: '',
-                    sit_stand_30s: '', walk_6m: '', flexibility: '', sit_ups_1m: '' 
+                    sit_stand_30s: '', walk_6m: '', flexibility: '', sit_ups_1m: '',
+                    ot_comments: '', exercise_comments: '', nutrition_comments: ''
                 });
                 const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -998,7 +2068,19 @@
                         '柔軟度(cm)': flexibility,
                         
                         sit_stand_30s: sit_stand_30s,
-                        '30秒坐站測驗(次)': sit_stand_30s
+                        '30秒坐站測驗(次)': sit_stand_30s,
+
+                        ot_comments: form.ot_comments,
+                        '職能治療評語與綜合分析': form.ot_comments,
+                        '職能治療評語': form.ot_comments,
+
+                        exercise_comments: form.exercise_comments,
+                        '運動處方建議': form.exercise_comments,
+                        '運動建議': form.exercise_comments,
+
+                        nutrition_comments: form.nutrition_comments,
+                        '營養建議': form.nutrition_comments,
+                        '營養處方建議': form.nutrition_comments
                     };
 
                     try {
@@ -1010,9 +2092,21 @@
                         const json = await res.json();
                         
                         if (json.status === 'success') {
+                            // Cache locally in case spreadsheet columns are not configured
+                            localStorage.setItem(`ot_comments_${idVal}_${sessionVal}`, form.ot_comments || '');
+                            localStorage.setItem(`exercise_comments_${idVal}_${sessionVal}`, form.exercise_comments || '');
+                            localStorage.setItem(`nutrition_comments_${idVal}_${sessionVal}`, form.nutrition_comments || '');
+
                             alert("✅ 資料已成功儲存到 Google Sheets！");
                             fetchData();
-                            setForm({ ...form, name: '', bed_number: '' });
+                            setForm({ 
+                                ...form, 
+                                name: '', 
+                                bed_number: '',
+                                ot_comments: '',
+                                exercise_comments: '',
+                                nutrition_comments: ''
+                            });
                         } else {
                             alert("❌ 儲存失敗：" + json.message);
                         }
@@ -1064,6 +2158,14 @@
                                     <label className="block text-sm">仰臥起坐 (次) <input type="number" name="sit_ups_1m" value={form.sit_ups_1m} onChange={handleChange} className="w-full border p-2 rounded" /></label>
                                 </div>
                             </div>
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-blue-800 border-l-4 border-blue-600 pl-2">4. 治療師評語與處方建議 (選填，留空將自動以評估結果生成智慧建議)</h3>
+                                <div className="grid grid-cols-1 gap-4">
+                                    <label className="block text-sm">職能治療評語 <textarea name="ot_comments" value={form.ot_comments} onChange={handleChange} placeholder="請輸入個別化職能治療評語（將直接呈現在報告中，留空將以評估結果自動產生）" rows="3" className="w-full border p-2 rounded"></textarea></label>
+                                    <label className="block text-sm">運動處方建議 <textarea name="exercise_comments" value={form.exercise_comments} onChange={handleChange} placeholder="請輸入個別化運動建議（將直接呈現在報告中，留空將以評估結果自動產生）" rows="3" className="w-full border p-2 rounded"></textarea></label>
+                                    <label className="block text-sm">營養建議 <textarea name="nutrition_comments" value={form.nutrition_comments} onChange={handleChange} placeholder="請輸入個別化營養建議（將直接呈現在報告中，留空將以評估結果自動產生）" rows="3" className="w-full border p-2 rounded"></textarea></label>
+                                </div>
+                            </div>
                             <button type="submit" disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow text-white ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
                                 {isSubmitting ? "資料上傳中..." : "新增並上傳資料"}
                             </button>
@@ -1071,7 +2173,183 @@
                     </div>
                 );
             };
-// --- 新增：登入處理函數 ---
+
+            // --- Page 4: 健康預警 ---
+            const AlertsView = () => {
+                const [searchTerm, setSearchTerm] = useState("");
+
+                const sessions = useMemo(() => {
+                    return [...new Set(data.map(d => d.session))].filter(Boolean).sort();
+                }, [data]);
+
+                const latestSession = sessions.length > 0 ? sessions[sessions.length - 1] : "";
+
+                const alertsList = useMemo(() => {
+                    const list = [];
+                    if (!latestSession) return [];
+
+                    // Group records by person
+                    const peopleMap = {};
+                    data.forEach(d => {
+                        const key = `${d.name}_${d.dob}`;
+                        if (!peopleMap[key]) peopleMap[key] = [];
+                        peopleMap[key].push(d);
+                    });
+
+                    // For each person, only process if they participated in the latest session
+                    Object.keys(peopleMap).forEach(key => {
+                        const personRecords = peopleMap[key].sort((a,b) => a.date.localeCompare(b.date));
+                        
+                        // Check if they have a record in the latest session
+                        const hasLatestRecord = personRecords.some(r => r.session === latestSession);
+                        if (!hasLatestRecord) return; // Skip if they didn't participate in the latest session
+
+                        const latest = personRecords[personRecords.length - 1];
+                        const warnings = getClinicalAlerts(personRecords, latest);
+                        if (warnings.length > 0) {
+                            list.push({
+                                name: latest.name,
+                                dob: latest.dob,
+                                bed: latest.bed_number,
+                                sex: latest.sex,
+                                age: latest.age,
+                                session: latest.session,
+                                date: latest.date,
+                                warnings: warnings
+                            });
+                        }
+                    });
+                    return list;
+                }, [data, latestSession]);
+
+                const filteredAlerts = useMemo(() => {
+                    if (!searchTerm) return alertsList;
+                    const cleanTerm = searchTerm.trim();
+                    return alertsList.filter(p => 
+                        p.name.includes(cleanTerm) || 
+                        (p.bed && String(p.bed).includes(cleanTerm))
+                    );
+                }, [alertsList, searchTerm]);
+
+                return (
+                    <div className="space-y-6 animate-fade-in pb-12">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                            {/* Title block */}
+                            <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-4 gap-4">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                        <i className="fas fa-bell text-red-500 animate-swing"></i>
+                                        學員健康預警與臨床變化追蹤
+                                    </h2>
+                                    <p className="text-gray-500 text-sm mt-1">
+                                        當前分析次別：<strong className="text-blue-600">{latestSession || "無次別"}</strong> (僅顯示本次別參測學員之異常警示)
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                                        <input 
+                                            type="text" 
+                                            placeholder="搜尋姓名或床號..." 
+                                            className="pl-9 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm w-48 md:w-64"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    <span className="bg-red-100 text-red-700 text-xs px-3 py-2 rounded-lg font-bold shrink-0">
+                                        異常學員：{filteredAlerts.length} / {alertsList.length} 人
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Banner explaining criteria */}
+                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 text-xs text-slate-700 leading-relaxed grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5"><i className="fas fa-info-circle text-blue-600"></i> 生理指標示警標準 (3-6個月變化)：</h4>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        <li><strong>體重 / BMI</strong>：急速增減大於等於 5% (1個月內) 或 累計增減大於等於 7%。</li>
+                                        <li><strong>內臟脂肪</strong>：內臟脂肪級數連續上升，或增加大於等於 1 級。</li>
+                                        <li><strong>體脂肪率</strong>：體脂率增加超過 2%。</li>
+                                        <li><strong>骨骼肌率</strong>：流失大於等於 1% (代表肌肉正被脂肪取代，警戒肌少肥胖)。</li>
+                                    </ul>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5"><i className="fas fa-dumbbell text-green-600"></i> 功能性體能示警標準 (3-6個月變化)：</h4>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        <li><strong>6分鐘行走測驗</strong>：步行距離減少 20 公尺以上 (心肺功能實質衰退)。</li>
+                                        <li><strong>30秒坐站次數</strong>：次數減少 2 次以上，或總次數低於 6 次 (跌倒/失能風險)。</li>
+                                        <li><strong>核心肌力與柔軟度</strong>：仰臥起坐退步大於等於 15% 或 坐姿體前彎減少大於等於 2 公分。</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* List cards */}
+                            {filteredAlerts.length === 0 ? (
+                                <div className="text-center py-20 text-gray-400">
+                                    <i className="fas fa-check-circle text-5xl text-green-500 mb-4"></i>
+                                    <p className="font-bold text-gray-600">
+                                        {searchTerm ? "沒有找到符合搜尋條件的預警學員。" : "目前本期測評學員的健康指標均在正常範圍內。"}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {filteredAlerts.map((p, idx) => (
+                                        <div key={idx} className="border border-red-100 rounded-xl overflow-hidden shadow-sm hover:shadow transition">
+                                            {/* Card Header */}
+                                            <div className="bg-red-50/50 p-4 border-b border-red-100 flex flex-wrap items-center justify-between gap-2">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-bold">
+                                                        {p.bed ? `${p.bed}床` : '無床號'}
+                                                    </span>
+                                                    <h3 className="text-lg font-bold text-slate-800">{p.name}</h3>
+                                                    <span className="text-sm text-gray-500">{p.sex} / {p.age}歲</span>
+                                                    <span className="text-xs text-gray-400">出生：{p.dob ? formatDateToRoc(p.dob) : '未填'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="text-xs text-slate-500 font-bold bg-white px-2 py-1 rounded border border-slate-200">
+                                                        最新評估次別：{p.session} ({formatDateToRoc(p.date)})
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => {
+                                                            setSelectedIndividualSession(p.session);
+                                                            setSelectedIndividualKey(`${p.name}_${p.dob}`);
+                                                            setCurrentPage('individual');
+                                                        }}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded shadow-sm flex items-center gap-1 font-bold transition"
+                                                    >
+                                                        <i className="fas fa-search"></i> 查看個案報告
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Warnings Details */}
+                                            <div className="p-4 bg-white grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {p.warnings.map((w, wIdx) => (
+                                                    <div key={wIdx} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-col justify-between">
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className={`w-2.5 h-2.5 rounded-full ${w.type === 'danger' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
+                                                                <strong className="text-slate-800 text-sm">{w.metric}</strong>
+                                                            </div>
+                                                            <p className="text-sm text-red-600 font-semibold mb-2">{w.desc}</p>
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 bg-white p-2 rounded border border-slate-100 mt-2">
+                                                            <strong className="text-slate-600">生理與醫學意義：</strong>
+                                                            {w.significance}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- 新增：登入處理函數 ---
             const handleLogin = async (e) => {
                 e.preventDefault();
                 setIsLoading(true);
@@ -1131,14 +2409,20 @@
                 );
             }
             return (
-                <div className="min-h-screen pb-10">
+                <div className="min-h-screen pb-10 bg-slate-50">
                     <nav className="bg-slate-800 text-white shadow-lg sticky top-0 z-50 no-print">
                         <div className="container mx-auto px-4 flex justify-between items-center h-16">
                             <h1 className="text-xl font-bold flex items-center"><i className="fas fa-heartbeat text-red-400 mr-2"></i>職能治療運動追蹤系統</h1>
-                            <div className="flex space-x-1">
-                                {[{id:'population',l:'族群概況',i:'fa-users'},{id:'individual',l:'個案報告',i:'fa-file-medical'},{id:'entry',l:'資料輸入',i:'fa-edit'}].map(t => (
-                                    <button key={t.id} onClick={()=>setCurrentPage(t.id)} className={`px-4 py-2 rounded transition flex items-center ${currentPage===t.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-slate-700'}`}><i className={`fas ${t.i} mr-2`}></i>{t.l}</button>
-                                ))}
+                            <div className="flex items-center space-x-2">
+                                <div className="flex space-x-1">
+                                    {[{id:'population',l:'族群概況',i:'fa-users'},{id:'individual',l:'個案報告',i:'fa-file-medical'},{id:'alerts',l:'健康預警',i:'fa-bell'},{id:'entry',l:'資料輸入',i:'fa-edit'}].map(t => (
+                                        <button key={t.id} onClick={()=>setCurrentPage(t.id)} className={`px-4 py-2 rounded transition flex items-center ${currentPage===t.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-slate-700'}`}><i className={`fas ${t.i} mr-2`}></i>{t.l}</button>
+                                    ))}
+                                </div>
+                                <button onClick={() => setShowApiKeyModal(true)} className="p-2 rounded text-gray-300 hover:bg-slate-700 hover:text-white transition flex items-center gap-1.5" title="設定 Gemini API 金鑰">
+                                    <i className="fas fa-cog text-lg"></i>
+                                    <span className="text-xs hidden md:inline">{geminiApiKey ? "AI金鑰已設定" : "設定 AI 金鑰"}</span>
+                                </button>
                             </div>
                         </div>
                     </nav>
@@ -1151,9 +2435,60 @@
                             </div>
                         ) : (
                             data.length === 0 ? <div className="text-center py-20 text-gray-500">尚無資料，請前往「資料輸入」新增一筆。</div> :
-                            currentPage === 'population' ? <PopulationView /> : currentPage === 'individual' ? <IndividualReportView /> : <DataEntryView />
+                            currentPage === 'population' ? <PopulationView /> : 
+                            currentPage === 'individual' ? (
+                                <IndividualReportView 
+                                    selSession={selectedIndividualSession} 
+                                    setSelSession={setSelectedIndividualSession}
+                                    selKey={selectedIndividualKey} 
+                                    setSelKey={setSelectedIndividualKey} 
+                                />
+                            ) : 
+                            currentPage === 'alerts' ? <AlertsView /> : <DataEntryView />
                         )}
                     </main>
+
+                    {/* Gemini API Key Settings Modal */}
+                    {showApiKeyModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full animate-scale-up">
+                                <div className="flex justify-between items-center border-b pb-3 mb-4">
+                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <i className="fas fa-key text-blue-600"></i>
+                                        設定 Gemini AI 智慧金鑰
+                                    </h3>
+                                    <button onClick={() => setShowApiKeyModal(false)} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <p className="text-xs text-gray-500 leading-relaxed">
+                                        本系統使用 Google Gemini API 觀察學員數據並生成個別化建議。此金鑰僅儲存在您的瀏覽器本地，不會上傳到任何伺服器。
+                                    </p>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Gemini API Key</label>
+                                        <input 
+                                            type="password" 
+                                            placeholder="AIzaSy..." 
+                                            className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-mono"
+                                            value={geminiApiKey}
+                                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="text-[11px] text-blue-600 bg-blue-50 p-2.5 rounded">
+                                        <i className="fas fa-info-circle mr-1"></i>
+                                        您可以前往 <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold hover:text-blue-800">Google AI Studio</a> 免費申請 API Key。
+                                    </div>
+                                    <div className="flex gap-2 justify-end pt-2 border-t">
+                                        <button onClick={() => setShowApiKeyModal(false)} className="px-4 py-2 border rounded-lg hover:bg-slate-50 text-sm">取消</button>
+                                        <button onClick={() => {
+                                            localStorage.setItem("gemini_api_key", geminiApiKey);
+                                            setShowApiKeyModal(false);
+                                            alert("🔑 API 金鑰已成功儲存！");
+                                        }} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow">確認儲存</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }; 
