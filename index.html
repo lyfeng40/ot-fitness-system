@@ -63,6 +63,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script> 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
     <div id="root"></div>
@@ -110,14 +112,15 @@
                     <h3 className="text-lg font-bold text-gray-700 mb-3 text-center">{title}</h3>
                     <div className="flex flex-wrap gap-2 mb-2 justify-center">
                         {datasets.map(d => (
-                            <button 
+                            <div 
                                 key={d.label} 
                                 onClick={() => toggleKey(d.label)}
-                                className={`chart-btn px-3 py-1 rounded-md text-sm flex items-center ${selectedKeys.includes(d.label) ? 'active' : 'bg-white text-gray-600'}`}
+                                role="button"
+                                className={`chart-btn px-3 py-1.5 rounded-md text-sm flex items-center justify-center cursor-pointer ${selectedKeys.includes(d.label) ? 'active' : 'bg-white text-gray-600'}`}
                             >
-                                {d.label}
+                                <span className="leading-none mt-px">{d.label}</span>
                                 <span className="indicator" style={{ backgroundColor: d.borderColor }}></span>
-                            </button>
+                            </div>
                         ))}
                     </div>
                     <div className="flex-grow min-h-[200px] relative">
@@ -940,6 +943,7 @@
                 const [aiForm, setAiForm] = useState({ ot_comments: '', exercise_comments: '', nutrition_comments: '' });
                 const [aiSaving, setAiSaving] = useState(false);
                 const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
+                const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
 
                 const handleGenerateAISuggestions = async () => {
                     const apiKey = localStorage.getItem("gemini_api_key");
@@ -1374,7 +1378,7 @@
                     html2pdf().from(el).set(opt).save();
                 };
 
-                const downloadSessionPDFs = (sessionVal) => {
+                const downloadSessionPDFs = async (sessionVal) => {
                     if (!sessionVal) {
                         alert("無有效的評估次別");
                         return;
@@ -1386,29 +1390,71 @@
                     }
                     
                     setIsGeneratingBatch(true);
+                    setBatchProgress({ current: 0, total: sessionRecords.length });
                     
-                    setTimeout(() => {
-                        const el = document.getElementById('batch-pdf-container');
-                        if (!el) {
+                    setTimeout(async () => {
+                        try {
+                            const el = document.getElementById('batch-pdf-container');
+                            if (!el) {
+                                setIsGeneratingBatch(false);
+                                alert("無法取得 PDF 生成容器");
+                                return;
+                            }
+                            
+                            const blocks = el.getElementsByClassName('batch-student-report-block');
+                            if (blocks.length === 0) {
+                                setIsGeneratingBatch(false);
+                                alert("無學員報告資料可生成");
+                                return;
+                            }
+
+                            const jsPDFClass = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+                            const html2canvasFn = window.html2canvas;
+                            if (!jsPDFClass || !html2canvasFn) {
+                                alert("❌ 找不到 PDF 或 畫布 截圖函式庫，請確認網頁已正確載入元件。");
+                                setIsGeneratingBatch(false);
+                                return;
+                            }
+
+                            // Initialize jsPDF document (standard A4 size: 210mm x 297mm)
+                            const pdf = new jsPDFClass('p', 'mm', 'a4');
+                            let pageCount = 0;
+
+                            // Process each student one by one
+                            for (let i = 0; i < blocks.length; i++) {
+                                setBatchProgress({ current: i + 1, total: blocks.length });
+                                
+                                // Fetch the pages inside this student block
+                                const pages = blocks[i].getElementsByClassName('pdf-page');
+                                for (let j = 0; j < pages.length; j++) {
+                                    const pageEl = pages[j];
+                                    
+                                    // Use html2canvas to capture page
+                                    const canvas = await html2canvasFn(pageEl, {
+                                        scale: 2.2, // standard scale for crisp rendering and safe memory usage
+                                        useCORS: true,
+                                        logging: false
+                                    });
+                                    
+                                    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                                    
+                                    if (pageCount > 0) {
+                                        pdf.addPage();
+                                    }
+                                    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                                    pageCount++;
+                                }
+                            }
+                            
+                            // Save document
+                            pdf.save(`OT體適能評估_${sessionVal}_全體學員報告.pdf`);
                             setIsGeneratingBatch(false);
-                            alert("無法取得 PDF 生成容器");
-                            return;
-                        }
-                        const opt = {
-                            margin: 5,
-                            filename: `OT體適能評估_${sessionVal}_全體學員報告.pdf`,
-                            image: { type: 'jpeg', quality: 0.98 },
-                            html2canvas: { scale: 3, useCORS: true }, 
-                            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                        };
-                        html2pdf().from(el).set(opt).save().then(() => {
-                            setIsGeneratingBatch(false);
-                        }).catch(err => {
+                        } catch (err) {
                             console.error(err);
-                            alert("生成全體 PDF 報告失敗");
+                            alert("生成全體 PDF 報告失敗: " + err.message);
                             setIsGeneratingBatch(false);
-                        });
-                    }, 2500); // Give Chart.js plenty of time to render all charts
+                        }
+                    }, 3500); // Give Chart.js plenty of time to render all charts
                 };
 
                 const exportSessionDataToExcel = (sessionVal) => {
@@ -1565,18 +1611,18 @@
                                     <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                         <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">身體素質表現</h3>
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                            <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">標準/評語</th></tr></thead>
+                                            <thead className="bg-gray-100"><tr><th className="border px-2 py-1.5 align-middle whitespace-nowrap">項目</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">數值</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">標準/評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{(typeof current.height === 'number' && current.height !== '') ? current.height.toFixed(1) : "-"} / {(typeof current.weight === 'number' && current.weight !== '') ? current.weight.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{(typeof current.bmi === 'number' && current.bmi !== '') ? current.bmi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.bmi_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{(typeof current.body_fat === 'number' && current.body_fat !== '') ? current.body_fat.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{current.body_fat_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{(typeof current.muscle_percent === 'number' && current.muscle_percent !== '') ? current.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{current.muscle_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{(typeof current.smi === 'number' && current.smi !== '') ? current.smi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{current.sarcopenia_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{(typeof current.visceral_fat === 'number' && current.visceral_fat !== '') ? current.visceral_fat.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap text-red-500">{current.visceral_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{current.body_age || "-"}</td><td className="border p-1 whitespace-nowrap">{current.body_age && current.age ? (current.body_age > current.age ? `+${current.body_age - current.age} (老化)` : `-${current.age - current.body_age} (年輕)`) : "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{current.bmr ? Number(current.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.bmr_status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">腰圍/臀圍</td><td className="border p-1 whitespace-nowrap">{current.waist ? Number(current.waist).toFixed(1) : "-"}/{current.hip ? Number(current.hip).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">cm</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{(typeof current.whr === 'number' && current.whr !== '') ? current.whr.toFixed(2) : "-"}</td><td className="border p-1 whitespace-nowrap">{current.whr_status || "-"} {current.whr ? `(標準: ${current.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">身高/體重</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.height === 'number' && current.height !== '') ? current.height.toFixed(1) : "-"} / {(typeof current.weight === 'number' && current.weight !== '') ? current.weight.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">-</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">BMI</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.bmi === 'number' && current.bmi !== '') ? current.bmi.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold text-blue-600">{current.bmi_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">體脂率</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.body_fat === 'number' && current.body_fat !== '') ? current.body_fat.toFixed(1) + "%" : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.body_fat_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">骨骼肌(%)</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.muscle_percent === 'number' && current.muscle_percent !== '') ? current.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.muscle_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">SMI(指數)</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.smi === 'number' && current.smi !== '') ? current.smi.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold text-blue-600">{current.sarcopenia_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">內臟脂肪</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.visceral_fat === 'number' && current.visceral_fat !== '') ? current.visceral_fat.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap text-red-500">{current.visceral_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">體年齡</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.body_age || "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.body_age && current.age ? (current.body_age > current.age ? `+${current.body_age - current.age} (老化)` : `-${current.age - current.body_age} (年輕)`) : "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">基礎代謝</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.bmr ? Number(current.bmr).toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.bmr_status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">腰圍/臀圍</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.waist ? Number(current.waist).toFixed(1) : "-"}/{current.hip ? Number(current.hip).toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">cm</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">腰臀比</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof current.whr === 'number' && current.whr !== '') ? current.whr.toFixed(2) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{current.whr_status || "-"} {current.whr ? `(標準: ${current.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
                                             </tbody>
                                         </table>
                                         
@@ -1593,12 +1639,12 @@
                                     <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                         <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">體能表現評估</h3>
                                         <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                            <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">評語</th></tr></thead>
+                                            <thead className="bg-gray-100"><tr><th className="border px-2 py-1.5 align-middle whitespace-nowrap">項目</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">數值</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">評語</th></tr></thead>
                                             <tbody>
-                                                <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.sit_stand_30s === 'number' && current.sit_stand_30s !== '') ? current.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${sitStandStd.color || ""}`}>{sitStandStd.status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.walk_6m === 'number' && current.walk_6m !== '') ? current.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border p-1 whitespace-nowrap ${walkStd.c || ""}`}>{walkStd.s || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.flexibility === 'number' && current.flexibility !== '') ? current.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border p-1 whitespace-nowrap ${flexStd.color || ""}`}>{flexStd.status || "-"}</td></tr>
-                                                <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof current.sit_ups_1m === 'number' && current.sit_ups_1m !== '') ? current.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${sitUpsStd.color || ""}`}>{sitUpsStd.status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">30秒坐站</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof current.sit_stand_30s === 'number' && current.sit_stand_30s !== '') ? current.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${sitStandStd.color || ""}`}>{sitStandStd.status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">6分鐘行走</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof current.walk_6m === 'number' && current.walk_6m !== '') ? current.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${walkStd.c || ""}`}>{walkStd.s || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">柔軟度</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof current.flexibility === 'number' && current.flexibility !== '') ? current.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${flexStd.color || ""}`}>{flexStd.status || "-"}</td></tr>
+                                                <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">仰臥起坐</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof current.sit_ups_1m === 'number' && current.sit_ups_1m !== '') ? current.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${sitUpsStd.color || ""}`}>{sitUpsStd.status || "-"}</td></tr>
                                             </tbody>
                                         </table>
                                         
@@ -1657,10 +1703,10 @@
                                     <p className="text-gray-500 mt-2">學員: {current.name} ( {formatDateToRoc(personRecords[0].date)} ~ {formatDateToRoc(personRecords[personRecords.length-1].date)} )</p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-6 h-[800px]">
-                                    <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={chartGroup1} labels={dates.map(formatDateToRoc)} initialSelected={['體重', '骨骼肌']} />
-                                    <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={chartGroup2} labels={dates.map(formatDateToRoc)} initialSelected={['內臟脂肪']} />
-                                    <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={chartGroup3} labels={dates.map(formatDateToRoc)} />
-                                    <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={chartGroup4} labels={dates.map(formatDateToRoc)} />
+                                    <InteractiveChart key={`${selKey}_g1`} title="身體組成 (體重/體脂/骨骼肌)" datasets={chartGroup1} labels={dates.map(formatDateToRoc)} />
+                                    <InteractiveChart key={`${selKey}_g2`} title="身體指標 (內臟脂肪/柔軟度)" datasets={chartGroup2} labels={dates.map(formatDateToRoc)} />
+                                    <InteractiveChart key={`${selKey}_g3`} title="肌力表現 (坐站/仰臥)" datasets={chartGroup3} labels={dates.map(formatDateToRoc)} />
+                                    <InteractiveChart key={`${selKey}_g4`} title="心肺耐力 (6分鐘行走)" datasets={chartGroup4} labels={dates.map(formatDateToRoc)} />
                                 </div>
                             </div>
                         </div>
@@ -1744,13 +1790,18 @@
 
                         {/* Batch PDF loading overlay */}
                         {isGeneratingBatch && (
-                            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4">
+                            <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col items-center justify-center p-4">
                                 <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center text-center max-w-md animate-scale-up">
                                     <i className="fas fa-file-pdf text-5xl text-emerald-600 animate-bounce mb-4"></i>
                                     <h3 className="font-bold text-lg text-slate-800 mb-2">正在批次生成全體學員 PDF 報告...</h3>
-                                    <p className="text-sm text-gray-500 mb-4">正在渲染與繪製該期別所有學員的體適能圖表，這可能需要數秒鐘，請勿關閉視窗。</p>
+                                    {batchProgress.total > 0 && (
+                                        <p className="text-sm text-blue-600 font-bold mb-2">
+                                            進度：{batchProgress.current} / {batchProgress.total} ({Math.round(batchProgress.current / batchProgress.total * 100)}%)
+                                        </p>
+                                    )}
+                                    <p className="text-sm text-gray-500 mb-4">正在逐一渲染學員的圖表與報告，請勿關閉視窗。</p>
                                     <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                                        <div className="bg-emerald-600 h-full animate-pulse" style={{ width: '100%' }}></div>
+                                        <div className="bg-emerald-600 h-full transition-all duration-300" style={{ width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total * 100) : 0}%` }}></div>
                                     </div>
                                 </div>
                             </div>
@@ -1758,7 +1809,7 @@
 
                         {/* Batch printing container (rendered in DOM to ensure correct layouts, but layered behind viewport) */}
                         {isGeneratingBatch && (
-                            <div style={{ position: 'absolute', left: 0, top: 0, width: '210mm', zIndex: -100, pointerEvents: 'none' }}>
+                            <div style={{ position: 'fixed', left: 0, top: 0, width: '210mm', zIndex: 10, background: 'white', pointerEvents: 'none' }}>
                                 <div id="batch-pdf-container" style={{ width: '210mm', background: 'white' }}>
                                     {peopleInSession.map((p, idx) => {
                                         // For each student in this session, resolve their current record and their history
@@ -1843,18 +1894,18 @@
                                                         <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                                             <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">身體素質表現</h3>
                                                             <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                                                <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">標準/評語</th></tr></thead>
+                                                                <thead className="bg-gray-100"><tr><th className="border px-2 py-1.5 align-middle whitespace-nowrap">項目</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">數值</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">標準/評語</th></tr></thead>
                                                                 <tbody>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">身高/體重</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.height === 'number' && pCurrent.height !== '') ? pCurrent.height.toFixed(1) : "-"} / {(typeof pCurrent.weight === 'number' && pCurrent.weight !== '') ? pCurrent.weight.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">-</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">BMI</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.bmi === 'number' && pCurrent.bmi !== '') ? pCurrent.bmi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{pCurrent.bmi_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">體脂率</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.body_fat === 'number' && pCurrent.body_fat !== '') ? pCurrent.body_fat.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_fat_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">骨骼肌(%)</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.muscle_percent === 'number' && pCurrent.muscle_percent !== '') ? pCurrent.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.muscle_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">SMI(指數)</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.smi === 'number' && pCurrent.smi !== '') ? pCurrent.smi.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap font-bold text-blue-600">{pCurrent.sarcopenia_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">內臟脂肪</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.visceral_fat === 'number' && pCurrent.visceral_fat !== '') ? pCurrent.visceral_fat.toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap text-red-500">{pCurrent.visceral_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">體年齡</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_age || "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.body_age && pCurrent.age ? (pCurrent.body_age > pCurrent.age ? `+${pCurrent.body_age - pCurrent.age} (老化)` : `-${pCurrent.age - pCurrent.body_age} (年輕)`) : "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">基礎代謝</td><td className="border p-1 whitespace-nowrap">{pCurrent.bmr ? Number(pCurrent.bmr).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.bmr_status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">腰圍/臀圍</td><td className="border p-1 whitespace-nowrap">{pCurrent.waist ? Number(pCurrent.waist).toFixed(1) : "-"}/{pCurrent.hip ? Number(pCurrent.hip).toFixed(1) : "-"}</td><td className="border p-1 whitespace-nowrap">cm</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">腰臀比</td><td className="border p-1 whitespace-nowrap">{(typeof pCurrent.whr === 'number' && pCurrent.whr !== '') ? pCurrent.whr.toFixed(2) : "-"}</td><td className="border p-1 whitespace-nowrap">{pCurrent.whr_status || "-"} {pCurrent.whr ? `(標準: ${pCurrent.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">身高/體重</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.height === 'number' && pCurrent.height !== '') ? pCurrent.height.toFixed(1) : "-"} / {(typeof pCurrent.weight === 'number' && pCurrent.weight !== '') ? pCurrent.weight.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">-</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">BMI</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.bmi === 'number' && pCurrent.bmi !== '') ? pCurrent.bmi.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold text-blue-600">{pCurrent.bmi_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">體脂率</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.body_fat === 'number' && pCurrent.body_fat !== '') ? pCurrent.body_fat.toFixed(1) + "%" : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.body_fat_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">骨骼肌(%)</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.muscle_percent === 'number' && pCurrent.muscle_percent !== '') ? pCurrent.muscle_percent.toFixed(1) + "%" : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.muscle_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">SMI(指數)</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.smi === 'number' && pCurrent.smi !== '') ? pCurrent.smi.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold text-blue-600">{pCurrent.sarcopenia_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">內臟脂肪</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.visceral_fat === 'number' && pCurrent.visceral_fat !== '') ? pCurrent.visceral_fat.toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap text-red-500">{pCurrent.visceral_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">體年齡</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.body_age || "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.body_age && pCurrent.age ? (pCurrent.body_age > pCurrent.age ? `+${pCurrent.body_age - pCurrent.age} (老化)` : `-${pCurrent.age - pCurrent.body_age} (年輕)`) : "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">基礎代謝</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.bmr ? Number(pCurrent.bmr).toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.bmr_status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">腰圍/臀圍</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.waist ? Number(pCurrent.waist).toFixed(1) : "-"}/{pCurrent.hip ? Number(pCurrent.hip).toFixed(1) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">cm</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">腰臀比</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{(typeof pCurrent.whr === 'number' && pCurrent.whr !== '') ? pCurrent.whr.toFixed(2) : "-"}</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap">{pCurrent.whr_status || "-"} {pCurrent.whr ? `(標準: ${pCurrent.sex === '男' ? '<0.92' : '<0.88'})` : ""}</td></tr>
                                                                 </tbody>
                                                             </table>
                                                             
@@ -1871,12 +1922,12 @@
                                                         <div className="flex flex-col h-full bg-white border rounded p-2 border-gray-200">
                                                             <h3 className="bg-gray-800 text-white text-center text-sm py-1 font-bold rounded-t mb-2">體能表現評估</h3>
                                                             <table className="w-full text-xs border border-gray-300 text-center mb-2">
-                                                                <thead className="bg-gray-100"><tr><th className="border p-1 whitespace-nowrap">項目</th><th className="border p-1 whitespace-nowrap">數值</th><th className="border p-1 whitespace-nowrap">評語</th></tr></thead>
+                                                                <thead className="bg-gray-100"><tr><th className="border px-2 py-1.5 align-middle whitespace-nowrap">項目</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">數值</th><th className="border px-2 py-1.5 align-middle whitespace-nowrap">評語</th></tr></thead>
                                                                 <tbody>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">30秒坐站</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.sit_stand_30s === 'number' && pCurrent.sit_stand_30s !== '') ? pCurrent.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pSitStandStd.color || ""}`}>{pSitStandStd.status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">6分鐘行走</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.walk_6m === 'number' && pCurrent.walk_6m !== '') ? pCurrent.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pWalkStd.c || ""}`}>{pWalkStd.s || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">柔軟度</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.flexibility === 'number' && pCurrent.flexibility !== '') ? pCurrent.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pFlexStd.color || ""}`}>{pFlexStd.status || "-"}</td></tr>
-                                                                    <tr><td className="border p-1 whitespace-nowrap">仰臥起坐</td><td className="border p-1 whitespace-nowrap font-bold">{(typeof pCurrent.sit_ups_1m === 'number' && pCurrent.sit_ups_1m !== '') ? pCurrent.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border p-1 whitespace-nowrap ${pSitUpsStd.color || ""}`}>{pSitUpsStd.status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">30秒坐站</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof pCurrent.sit_stand_30s === 'number' && pCurrent.sit_stand_30s !== '') ? pCurrent.sit_stand_30s.toFixed(1) + " 次" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${pSitStandStd.color || ""}`}>{pSitStandStd.status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">6分鐘行走</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof pCurrent.walk_6m === 'number' && pCurrent.walk_6m !== '') ? pCurrent.walk_6m.toFixed(1) + " m" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${pWalkStd.c || ""}`}>{pWalkStd.s || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">柔軟度</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof pCurrent.flexibility === 'number' && pCurrent.flexibility !== '') ? pCurrent.flexibility.toFixed(1) + " cm" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${pFlexStd.color || ""}`}>{pFlexStd.status || "-"}</td></tr>
+                                                                    <tr><td className="border px-2 py-1.5 align-middle whitespace-nowrap">仰臥起坐</td><td className="border px-2 py-1.5 align-middle whitespace-nowrap font-bold">{(typeof pCurrent.sit_ups_1m === 'number' && pCurrent.sit_ups_1m !== '') ? pCurrent.sit_ups_1m.toFixed(1) + " 次" : "-"}</td><td className={`border px-2 py-1.5 align-middle whitespace-nowrap ${pSitUpsStd.color || ""}`}>{pSitUpsStd.status || "-"}</td></tr>
                                                                 </tbody>
                                                             </table>
                                                             
@@ -1925,14 +1976,14 @@
                                                 {/* Page 2 */}
                                                 <div className="pdf-page p-8 relative" style={{ height: '275mm', width: '100%', overflow: 'hidden', pageBreakAfter: idx === peopleInSession.length - 1 ? 'auto' : 'always', position: 'relative', background: 'white' }}>
                                                     <div className="border-b-4 border-gray-600 pb-4 mb-6 text-center">
-                                                        <h1 className="text-3xl font-bold text-gray-800">歷程追蹤 analysis 報告</h1>
+                                                        <h1 className="text-3xl font-bold text-gray-800">歷程追蹤分析報告</h1>
                                                         <p className="text-gray-500 mt-2">學員: {pCurrent.name} ( {formatDateToRoc(pDates[0])} ~ {formatDateToRoc(pDates[pDates.length-1])} )</p>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-6 h-[800px]">
-                                                        <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" datasets={pChartGroup1} labels={pDates.map(formatDateToRoc)} initialSelected={['體重', '骨骼肌']} options={{ animation: false }} />
-                                                        <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" datasets={pChartGroup2} labels={pDates.map(formatDateToRoc)} initialSelected={['內臟脂肪']} options={{ animation: false }} />
-                                                        <InteractiveChart title="肌力表現 (坐站/仰臥)" datasets={pChartGroup3} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
-                                                        <InteractiveChart title="心肺耐力 (6分鐘行走)" datasets={pChartGroup4} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                        <InteractiveChart title="身體組成 (體重/體脂/骨骼肌)" key={`${key}_g1`} datasets={pChartGroup1} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                        <InteractiveChart title="身體指標 (內臟脂肪/柔軟度)" key={`${key}_g2`} datasets={pChartGroup2} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                        <InteractiveChart title="肌力表現 (坐站/仰臥)" key={`${key}_g3`} datasets={pChartGroup3} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
+                                                        <InteractiveChart title="心肺耐力 (6分鐘行走)" key={`${key}_g4`} datasets={pChartGroup4} labels={pDates.map(formatDateToRoc)} options={{ animation: false }} />
                                                     </div>
                                                 </div>
                                             </div>
